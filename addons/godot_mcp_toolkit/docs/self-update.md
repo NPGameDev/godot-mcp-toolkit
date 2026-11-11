@@ -52,17 +52,30 @@ Godot's file system dock, the exporter and the Plugins list skip a folder whose 
 starts with a dot. The toolkit's export strip also leaves the folder out of exports,
 and the toolkit's MCP tools refuse to read or write it.
 
-**The addon folder, `res://addons/godot_mcp_toolkit/`.** Nothing writes it while the
-editor runs. When the editor closes or restarts, the toolkit checks the ready
-update again (the signature, the manifest, the zip's hash and the list of files in
-the zip), moves the current addon folder to `backup-<version>/` and moves `stage/`
-into its place. If the second move fails, the backup goes back where it was and the
-update waits for the next close.
+**The addon folder, `res://addons/godot_mcp_toolkit/`.** The toolkit writes it only
+when the editor closes or restarts. It then checks the ready update again (the
+signature, the manifest, the zip's hash and the list of files in the zip), moves the
+current addon folder to `backup-<version>/` and moves `stage/` into its place. If the
+second move fails, the backup goes back where it was and the update waits for the
+next close. The recovery plugin may also move a version into place at the next start
+(see [If an update doesn't load](#if-an-update-doesnt-load)).
 
 After a successful update, the next start deletes the download and the stage. The
 backup stays until the next update is ready. Turn off **Keep Backup**
 (`mcp_toolkit/updates/keep_backup`) and a successful update deletes the whole update
 folder instead.
+
+**The recovery plugin, `res://addons/.godot_mcp_toolkit_recovery/`.** While an update
+is ready or installing, the toolkit keeps a second, small editor plugin here and adds
+its `plugin.cfg` to the enabled plugins in `project.godot`. It loads nothing from the
+addon folder, so it can still run at the next start when the new version doesn't (see
+[If an update doesn't load](#if-an-update-doesnt-load)). Like the update folder, it is
+hidden from the editor, kept out of exports, refused by the MCP tools, and carries its
+own `.gitignore` and `.p4ignore`. The start that reports the update's result deletes
+the folder and the entry, and so does turning the toolkit off. An update dropped
+before it installs, for example when you discard it or switch to `manual`, leaves
+them in place until the next start, which deletes them. If `project.godot`
+can't be saved, the update doesn't install, and the dock says why.
 
 **The trust documents.** These are a few KB each, named `trust-<number>.json`, and
 are kept once per machine, so every project on it sees the same keys:
@@ -137,6 +150,26 @@ You don't have to restart at all. The update also installs when you close the
 editor normally. An editor that is killed or crashes installs nothing, and the
 update waits for the next normal close.
 
+## If an update doesn't load
+
+At the next start, the recovery plugin checks whether the toolkit is running. If
+the update left it off, a dialog says what the recovery plugin did and offers
+**Restart now** and **Later**:
+
+- **The new version did not load in your Godot.** The backup goes back into the
+  addon folder, and the version that failed is deleted. The dock doesn't offer that
+  version again until a newer one is out.
+- **The editor was killed partway through the install.** The update is finished if
+  its files are still whole, or the previous version goes back if they aren't.
+- **Godot 4.2 needs one more restart.** An update that moves a script with a
+  `class_name` can keep the new version from starting once on 4.2. Nothing is
+  moved; the restart loads it.
+
+Until you restart, the toolkit stays off. When the recovery plugin can't set things
+right, or a new version loads but misbehaves, follow "The toolkit is off after an
+update" in the troubleshooting guide:
+<https://github.com/NPGameDev/godot-mcp-toolkit/blob/main/docs/troubleshooting.md#the-toolkit-is-off-after-an-update>
+
 ## The server pin
 
 When an update you started installs, the toolkit moves its own server version in
@@ -173,7 +206,8 @@ own.
 
 With any other version control, ignore `addons/.godot_mcp_toolkit_update/` in your
 project's own rules, or turn off **Keep Backup** so a successful update leaves
-nothing behind.
+nothing behind. Ignore `addons/.godot_mcp_toolkit_recovery/` the same way: it comes
+and goes with updates.
 
 Because the folder is ignored, `git clean -fdX`, `git clean -fdx` and `git stash -a`
 delete it, along with any update that is waiting and the backup.
@@ -208,9 +242,10 @@ project, which the update replaces.
 
 ## Uninstalling
 
-Delete `res://addons/.godot_mcp_toolkit_update/` along with the addon folder. The
-trust documents stay in the folder for your OS (see the table above); they are safe
-to delete.
+Delete `res://addons/.godot_mcp_toolkit_update/` along with the addon folder. Turning
+the toolkit off first also deletes the recovery plugin's folder and its entry in
+`project.godot`. The trust documents stay in the folder for your OS (see the table
+above); they are safe to delete.
 
 If an update went wrong, the troubleshooting guide has the steps:
-<https://github.com/NPGameDev/godot-mcp-toolkit/blob/main/docs/troubleshooting.md>
+<https://github.com/NPGameDev/godot-mcp-toolkit/blob/main/docs/troubleshooting.md#the-toolkit-is-off-after-an-update>

@@ -124,14 +124,22 @@ UPDATE_GUI_SCENARIOS="restart server" UPDATE_GUI_ARTIFACTS=/tmp/update-gui bash 
 `test/apply_kill_driver/run_legs.sh` runs the swap the editor's exit makes in real
 editors and kills one at each step, then checks what the next start makes of it.
 It also runs a clean update, a file scan in flight at the exit, a real git
-repository and a linked addon folder. It builds both releases with
+repository, a linked addon folder, a release that does not load, a stale class
+cache, and a toolkit folder held so it cannot move (`held`). The script's header
+names every leg; pass leg names to run only those. It builds both releases with
 `scripts/build-plugin-release.sh` and signs one with a key made for the run, so it
-needs zip and openssl, and a display (`xvfb-run` on Linux). It runs on Linux and in
-Git Bash on Windows. CI runs it on Godot 4.2.0 and 4.7.0 in
-the floor.
+needs zip, openssl, GNU `timeout` (`gtimeout` on macOS, from coreutils) and a
+display (`xvfb-run` on Linux). It runs on Linux, macOS and in Git Bash on Windows.
+On Linux and macOS the `held` leg makes `addons/` read-only; on Windows it holds
+a toolkit file open with Python 3, which `UT_PYTHON` names when it isn't `python3`
+or `python` on the PATH. In the floor, a push or pull request runs it on Godot 4.2
+through 4.7 on Linux and on 4.7 on macOS. A dispatch of `ci.yml` with `macos-kill`
+set, and every run of `release.yml` (its dry run included), also run it on macOS
+for 4.2 through 4.6.
 
 ```bash
 GODOT_BIN=/path/to/godot xvfb-run -a bash test/apply_kill_driver/run_legs.sh
+GODOT_BIN=/path/to/godot xvfb-run -a bash test/apply_kill_driver/run_legs.sh k2 broken
 ```
 
 ## Tool sweep (interactive, editor required)

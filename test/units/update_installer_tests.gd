@@ -46,6 +46,8 @@ static func run(testing: Testing, tree: SceneTree) -> void:
 	await _test_staged_release_stands(testing, tree)
 	await _test_stage_failing_its_check_gives_way(testing, tree)
 	await _test_click_stages_and_the_exit_applies(testing, tree)
+	await _test_staging_installs_the_recovery_plugin_first(testing, tree)
+	await _test_unsaved_recovery_plugin_still_stages(testing, tree)
 	_test_staged_at_start_opens_the_ready_view(testing, tree)
 	await _test_click_and_stage_restarts(testing, tree)
 	await _test_leaving_the_tree_during_a_scan(testing, tree)
@@ -65,6 +67,7 @@ static func run(testing: Testing, tree: SceneTree) -> void:
 	await _test_cancel_lets_the_journal_go(testing, tree)
 	_test_settled(testing, tree)
 	_test_update_settled_signal(testing, tree)
+	await _test_settle_waits_for_a_running_apply(testing, tree)
 	_test_postponed_reason(testing, tree)
 	_test_headless_start_keeps_a_journal(testing, tree, "1.9.0")
 	_test_headless_start_keeps_a_journal(testing, tree, "")
@@ -723,6 +726,53 @@ static func _test_click_stages_and_the_exit_applies(testing: Testing, tree: Scen
 	print("")
 
 
+static func _test_staging_installs_the_recovery_plugin_first(testing: Testing, tree: SceneTree) -> void:
+	testing.begin("Update installer: staging installs the recovery plugin once, before the journal says staged")
+	var click := _begin_click("installer_recovery_install", tree)
+	var recovery := _recovery_of(click)
+	var installs_at_start := recovery.installs
+	await _click_and_download(click, tree)
+	await _wait_past_preparing(_installer_of(click), tree)
+	var state := _installer_of(click).state()
+	var note := _installer_of(click).recovery_note()
+	var installs := recovery.installs
+	var journal_states := recovery.journal_states
+	var record := _record_state(click["world"])
+	_end_click(click)
+	testing.eq(installs_at_start, 0, "a start with nothing staged → no install")
+	testing.eq(state, "ready", "the stage is whole → ready")
+	testing.eq(installs, 1, "staging → one install")
+	testing.eq(journal_states, PackedStringArray(["verified"]), "made while the journal still says verified")
+	testing.eq(record, "staged", "and the journal says staged after it")
+	testing.eq(note, "", "an install that worked → no note")
+	print("")
+
+
+# The exit's own read of project.godot postpones an update the recovery plugin cannot
+# cover, so a failed install still stages.
+static func _test_unsaved_recovery_plugin_still_stages(testing: Testing, tree: SceneTree) -> void:
+	testing.begin("Update installer: a recovery plugin that could not be saved still stages, and the note says so")
+	var click := _begin_click("installer_recovery_unsaved", tree)
+	_recovery_of(click).failure = "project.godot could not be saved"
+	await _click_and_download(click, tree)
+	await _wait_past_preparing(_installer_of(click), tree)
+	var state := _installer_of(click).state()
+	var note := _installer_of(click).recovery_note()
+	var record := _record_state(click["world"])
+	var install_log := FileAccess.get_file_as_string(_installer_of(click).log_path())
+	_end_click(click)
+	testing.eq(state, "ready", "the stage is whole → ready")
+	testing.eq(record, "staged", "the journal says staged")
+	testing.eq(note, "The update may not install when you close the editor: project.godot could not be saved.",
+			"the note says project.godot could not be saved")
+	testing.ok(install_log.contains("1.9.0: project.godot could not be saved"), "and the install log says it too")
+	print("")
+
+
+static func _recovery_of(click: Dictionary) -> UpdateFixtures.RecoveryStandIn:
+	return ((click["world"] as Dictionary)["options"] as Dictionary)["recovery"]
+
+
 static func _test_staged_at_start_opens_the_ready_view(testing: Testing, tree: SceneTree) -> void:
 	testing.begin("Update installer: a staged release found at start opens the ready view")
 	var world := UpdateFixtures.begin_world("installer_ready_view", "1.9.0", "ask", "1.1.0")
@@ -1275,6 +1325,54 @@ static func _test_update_settled_signal(testing: Testing, tree: SceneTree) -> vo
 			"carrying what settled() returns")
 	testing.eq(str(settled.get("report", "")), "updated", "an installed update → its updated report")
 	testing.eq(str(settled.get("compatible_server", "")), "0.0.1", "with the server the old toolkit recommended")
+	print("")
+
+
+# Another editor's exit stamped the journal applying a minute before the start's clock, so
+# the settle waits the window's last second and runs again. The clock moves past the window
+# before that recheck; the cap leaves a slow machine room past the one-second timer. A
+# change the runner reports meanwhile starts nothing.
+static func _test_settle_waits_for_a_running_apply(testing: Testing, tree: SceneTree) -> void:
+	testing.begin("Update installer: an apply still running at the start is settled once it is past")
+	var server := UpdateFixtures.LoopbackReleaseServer.new({})
+	var previous_host := UpdateFixtures.set_host(server.host())
+	var world := UpdateFixtures.begin_world("installer_apply_running", "1.9.0", "ask", "1.1.0")
+	UpdateFixtures.stage(world["updates"], "1.9.0", {"core/a.gd": "new"}, "1.1.0", UpdateFixtures.key())
+	var start_time := int(Time.get_unix_time_from_system())
+	var journal := UpdateJournal.read(str(world["updates"]))
+	journal["state"] = "applying"
+	journal["applying_at"] = start_time - 60
+	UpdateJournal.write(journal, str(world["updates"]))
+	var options: Dictionary = world["options"]
+	options["now"] = start_time
+	var runner := UpdateCheckRunner.new()
+	var installer := UpdateInstaller.new(runner, options)
+	var announced: Array = []
+	installer.update_settled.connect(func(settled: Dictionary) -> void: announced.append(settled))
+	tree.root.add_child(installer)
+	runner.state_changed.emit()
+	var settled_while_waiting := installer.settled()
+	var state_while_waiting := installer.state()
+	var journal_while_waiting := str(UpdateJournal.read(str(world["updates"]))["state"])
+	var announced_while_waiting := announced.size()
+	# The installer holds this same options dictionary, so its recheck reads the moved clock.
+	options["now"] = start_time + 61
+	var deadline := Time.get_ticks_msec() + 3000
+	while announced.is_empty() and Time.get_ticks_msec() < deadline:
+		await tree.process_frame
+	var settled := installer.settled()
+	var state := installer.state()
+	UpdateFixtures.end_world(world, {"runner": runner, "installer": installer})
+	server.stop()
+	UpdateFixtures.restore_host(previous_host)
+	testing.eq(settled_while_waiting, {}, "while the apply may run → nothing settled")
+	testing.eq(announced_while_waiting, 0, "and nothing announced")
+	testing.eq(state_while_waiting, "idle", "the installer stays idle")
+	testing.eq(journal_while_waiting, "applying", "and leaves the journal alone")
+	testing.eq(announced.size(), 1, "past the minute → announced once")
+	testing.eq(announced[0] if not announced.is_empty() else {}, settled, "carrying what settled() returns")
+	testing.eq(str(settled.get("report", "")), "waiting", "the old version live and the stage whole → waiting")
+	testing.eq(state, "ready", "so the staged update is ready")
 	print("")
 
 

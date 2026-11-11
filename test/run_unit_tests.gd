@@ -87,9 +87,12 @@ const UpdateFolderGuardTests := preload("res://test/units/update_folder_guard_te
 const UpdateJournalTests := preload("res://test/units/update_journal_tests.gd")
 const FolderFilesTests := preload("res://test/units/folder_files_tests.gd")
 const UpdateApplierTests := preload("res://test/units/update_applier_tests.gd")
+const RecoveryJournalTests := preload("res://test/units/recovery_journal_tests.gd")
+const RecoveryActionsTests := preload("res://test/units/recovery_actions_tests.gd")
 const UpdateSettlerTests := preload("res://test/units/update_settler_tests.gd")
 const UpdateDownloaderTests := preload("res://test/units/update_downloader_tests.gd")
 const UpdateInstallerTests := preload("res://test/units/update_installer_tests.gd")
+const RecoveryFilesTests := preload("res://test/units/recovery_files_tests.gd")
 const RestartGateTests := preload("res://test/units/restart_gate_tests.gd")
 const UpdateCheckFailureTests := preload("res://test/units/update_check_failure_tests.gd")
 const UpdateTrustWalkTests := preload("res://test/units/update_trust_walk_tests.gd")
@@ -196,9 +199,12 @@ func _init() -> void:
 	UpdateJournalTests.run(testing)
 	FolderFilesTests.run(testing)
 	UpdateApplierTests.run(testing)
+	RecoveryJournalTests.run(testing)
+	RecoveryActionsTests.run(testing)
 	UpdateSettlerTests.run(testing)
 	await UpdateDownloaderTests.run(testing, self)  # fetches through loopback listeners → coroutine
 	await UpdateInstallerTests.run(testing, self)  # waits for a live tree → coroutine
+	await RecoveryFilesTests.run(testing, self)  # waits for a live tree → coroutine
 	await RestartGateTests.run(testing, self)  # a scan holds a restart across frames → coroutine
 	UpdateCheckFailureTests.run(testing)
 	await UpdateTrustWalkTests.run(testing, self)  # fetches through loopback listeners → coroutine

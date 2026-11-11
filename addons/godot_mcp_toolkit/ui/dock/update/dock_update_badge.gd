@@ -297,6 +297,7 @@ func _render_install_state() -> void:
 		facts[DockUpdateBadgeStatus.CHANGED] = _installer.changed_files().size()
 		facts[DockUpdateBadgeStatus.ERROR] = _installer.error_text()
 		facts[DockUpdateBadgeStatus.NOTE] = _installer.note_text()
+		facts[DockUpdateBadgeStatus.RECOVERY_NOTE] = _installer.recovery_note()
 		facts[DockUpdateBadgeStatus.POSTPONED] = _installer.postponed_reason()
 		if state == UpdateInstaller.AVAILABLE and _pin_move != null:
 			facts[DockUpdateBadgeStatus.PIN_PREVIEW] = _pin_move.preview(_installer.offered_compatible_server())

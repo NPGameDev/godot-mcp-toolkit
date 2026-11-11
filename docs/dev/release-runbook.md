@@ -47,6 +47,11 @@ Fire each repo's `release.yml` through `workflow_dispatch` with `dry-run: true`.
 runs; publish and GH-Release steps skip. The dispatch input defaults to true, so a dispatch can
 never publish by accident.
 
+In the toolkit the rehearsal also runs the whole floor (`ci.yml`), with the apply-kill legs on macOS
+for every Godot version, which pull requests run on 4.7 only. The first such rehearsal took 50
+minutes, its slowest macOS row 38, so allow an hour. It must be green before you tag, and the tag
+run repeats it before it publishes.
+
 A rehearsal certifies the **pinned** sibling, not the two HEADs. If every behavioral leg fails
 identically, suspect a stale pin before suspecting the code.
 

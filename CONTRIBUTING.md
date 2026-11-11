@@ -115,12 +115,14 @@ contributor-facing summary.
   place of GitHub (`scripts/test_framework/update_flow.sh`). The **release builds** job
   (`release-builds`) checks that the bash and PowerShell release builds write the same
   release (`scripts/test_framework/check_release_builds.sh`). The **apply kill** job
-  (`apply-kill`) runs the self-update's swap in
-  real editors on 4.2.0 and 4.7.0, killing them at each step
-  (`test/apply_kill_driver/run_legs.sh`). A single aggregate job,
-  **`Toolkit floor OK`**, `needs:` the whole floor — that one name is what a
-  required check binds to, never an individual matrix row. Green floor is a merge
-  precondition.
+  (`apply-kill`) runs the self-update's swap in real editors, killing them at each
+  step, with the recovery plugin's legs and a held toolkit folder
+  (`test/apply_kill_driver/run_legs.sh`). A push or pull request runs it on Linux
+  for 4.2 through 4.7 and on macOS for 4.7. The macOS rows for 4.2 through 4.6 run
+  when you dispatch `ci.yml` with `macos-kill` set, and before every release. A
+  single aggregate job, **`Toolkit floor OK`**, `needs:` the whole floor — that one
+  name is what a required check binds to, never an individual matrix row. Green
+  floor is a merge precondition.
 - **Deep tier — every code pull request** (`cross-version.yml`). The full **two-editor behavioral
   matrix** — GDScript-editor and .NET/mono-editor, Godot **4.2 through 4.7** —
   boots a real headless editor and round-trips the complete smoke + flows suites
@@ -137,7 +139,8 @@ contributor-facing summary.
   commit message, via **`workflow_dispatch`** (optionally with a `sibling-ref`
   override), or automatically as part of a release (below).
 - **Release** (`release.yml`). A **`v*` tag push** first runs the deep behavioral
-  matrix (the zip job `needs:` it — a cross-version regression can never ship),
+  matrix and the whole floor, with the apply-kill job on macOS for every version
+  (the zip job `needs:` both — a cross-version regression can never ship),
   then builds the plugin zip and its update manifest, **install-smokes the actual
   artifact** (unzips it into a scratch project and boots a headless editor to prove
   the plugin enables), checks the booted tree against the zip's release file list

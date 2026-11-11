@@ -527,7 +527,7 @@ static func _cmd_particles_create(parameters: Dictionary) -> Dictionary:
 		return MCPToolkitError.fail("NO_SCENE", "no edited scene")
 	var parent_path := str(parameters.get("parent_path", "."))
 	parent_path = Helpers.normalize_editor_path(parent_path)
-	var parent := Helpers.resolve_scene_node(parent_path)
+	var parent: Node = Helpers.resolve_scene_node(parent_path)
 	if parent == null:
 		return MCPToolkitError.fail("NOT_FOUND",
 			"parent not found: %s" % parent_path, MCPToolkitError.HINT_NODE_PATH)

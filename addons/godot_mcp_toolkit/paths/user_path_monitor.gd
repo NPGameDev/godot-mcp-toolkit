@@ -45,9 +45,9 @@ func stop() -> void:
 
 
 func _on_settings_changed() -> void:
-	var name := ProjectSettings.get_setting("application/config/name", "")
+	var name: String = ProjectSettings.get_setting("application/config/name", "")
 	var use_custom := bool(ProjectSettings.get_setting("application/config/use_custom_user_dir", false))
-	var custom_name := ProjectSettings.get_setting("application/config/custom_user_dir_name", "")
+	var custom_name: String = ProjectSettings.get_setting("application/config/custom_user_dir_name", "")
 	if name == _cached_name and use_custom == _cached_use_custom_dir and custom_name == _cached_custom_dir_name:
 		return
 	_cached_name = name

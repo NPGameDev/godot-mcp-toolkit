@@ -13,12 +13,15 @@ const RestartGate := preload("res://addons/godot_mcp_toolkit/self_update/restart
 const MCPJsonSync := preload("res://addons/godot_mcp_toolkit/ui/mcp_json_sync.gd")
 
 const _REASON := "could not rename the addon folder"
+const _NOTE := "The update may not install when you close the editor: project.godot could not be saved."
 
 
 static func run(testing: Testing) -> void:
 	_test_download_and_stage_lines_differ(testing)
 	_test_postponed_reason(testing)
 	_test_postponed_says_it_tries_again(testing)
+	_test_ready_note(testing)
+	_test_ready_shows_no_install_note(testing)
 	_test_ready_view_findings(testing)
 	_test_untrusted_notice_adds_a_line(testing)
 	_test_malformed_file_says_fix_once(testing)
@@ -83,6 +86,33 @@ static func _test_postponed_reason(testing: Testing) -> void:
 	testing.ok(not staged.contains(_REASON), "no reason → no such line")
 	testing.ok(postponed_in_view.contains(_REASON), "the ready view open → the reason still shows")
 	testing.eq(postponed_in_view.split("\n").size(), in_view.split("\n").size() + 1, "under the view's lines")
+	print("")
+
+
+static func _test_ready_note(testing: Testing) -> void:
+	testing.begin("Badge status: a staged update's note shows under its lines")
+	var view := {RestartGate.SCENES_ASKED: true}
+	var staged := DockUpdateBadgeStatus.install_line(UpdateInstaller.READY, "1.9.0", {})
+	var noted := DockUpdateBadgeStatus.install_line(UpdateInstaller.READY, "1.9.0",
+			{DockUpdateBadgeStatus.RECOVERY_NOTE: _NOTE})
+	var in_view := DockUpdateBadgeStatus.install_line(UpdateInstaller.READY, "1.9.0", {DockUpdateBadgeStatus.VIEW: view})
+	var noted_in_view := DockUpdateBadgeStatus.install_line(UpdateInstaller.READY, "1.9.0", {DockUpdateBadgeStatus.VIEW: view,
+			DockUpdateBadgeStatus.POSTPONED: _REASON, DockUpdateBadgeStatus.RECOVERY_NOTE: _NOTE})
+	testing.eq(noted, staged + "\n" + _NOTE, "a note → a last line of its own")
+	testing.ok(not staged.contains(_NOTE), "no note → no such line")
+	testing.ok(noted_in_view.ends_with("\n" + _NOTE), "the view open and postponed → the note still comes last")
+	testing.eq(noted_in_view.split("\n").size(), in_view.split("\n").size() + 2, "under the view's and the reason's lines")
+	print("")
+
+
+# The update is already staged, so why the editor cannot install a newer one says nothing
+# about it.
+static func _test_ready_shows_no_install_note(testing: Testing) -> void:
+	testing.begin("Badge status: a staged update's line leaves out why the editor cannot install")
+	var staged := DockUpdateBadgeStatus.install_line(UpdateInstaller.READY, "1.9.0", {})
+	var guarded := DockUpdateBadgeStatus.install_line(UpdateInstaller.READY, "1.9.0",
+			{DockUpdateBadgeStatus.NOTE: "A headless editor never installs updates."})
+	testing.eq(guarded, staged, "a guard note → no line under the staged update's")
 	print("")
 
 

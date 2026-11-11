@@ -67,10 +67,38 @@ plugin's `_exit_tree` when the editor exits for any reason other than a disable.
   the stage into its place. A failed second rename renames the backup back. The next start reads
   the journal and reports the result (`self_update/update_settler.gd`). An editor ended by a
   signal skips `_exit_tree`, and the update waits for the next normal exit.
-  One risk remains: a kill in the 0 to 7 ms between the two renames leaves no installed folder,
-  with the old and new copies both whole in the update folder. Recovery from that is by hand
-  ([troubleshooting](../troubleshooting.md)), and a `git clean -fdX` in that state deletes both
-  copies, so the toolkit has to be reinstalled.
+  A kill in the 0 to 7 ms between the two renames leaves no installed folder, with the old and
+  new copies both whole in the update folder; the recovery plugin below settles it at the next
+  start. A `git clean -fdX` in that state deletes both copies, so the toolkit has to be
+  reinstalled ([troubleshooting](../troubleshooting.md#the-toolkit-is-off-after-an-update)).
+- **A recovery plugin covers the starts the toolkit cannot run.** The settler lives in the addon
+  folder, so a start that finds no addon folder, or a version that does not load, runs none of
+  it. While the journal says `staged`, `applying` or `applied`, a second editor plugin lives in
+  `res://addons/.godot_mcp_toolkit_recovery/`, enabled in `project.godot` by its full
+  `plugin.cfg` path; the scanner and the Plugins list skip the folder. Its template ships in
+  `self_update/recovery/`, and staging copies it out and saves its entry
+  (`self_update/recovery_files.gd`). It loads nothing from the addon folder and reads the journal
+  with its own code (`self_update/recovery/recovery_journal.gd`). A few seconds after the first
+  scan, with the toolkit not running, it acts once: a kill between the renames rolls the stage
+  forward when it hashes to the journal's `expected_tree_hash` and otherwise renames the backup
+  back; an `applied` version that did not load is renamed aside, the backup renamed in and the
+  journal written `not_applied` with `restored`, so the restored toolkit reports it instead of
+  staging that release again; a toolkit enabled but never started, which Godot 4.2 leaves after
+  an update that moves a global class, gets one more restart, asked once. Each of these asks
+  for a restart and enables nothing in the same session. A case it cannot square, such as a
+  missing backup or a third version in the addon folder, gets a dialog with the manual steps.
+  The toolkit's start removes the recovery plugin once the journal has settled, and a disable
+  removes it too. A release that loads but misbehaves stays a manual rollback.
+- **Two applier additions, frozen in 1.2.0.** The recovery plugin needs both, and like the rest
+  of the applier they never change once 1.2.0 ships. The applier writes `applying_at`, the Unix
+  time, with `applying` (the journal stays format 1); the settler and the recovery plugin act on
+  an `applying` journal only once it is more than 60 s old or more than 60 s in the future,
+  since an apply in another editor's exit may still be running. And before it writes
+  `applying`, the applier reads `project.godot` from disk: if the saved
+  `editor_plugins/enabled` does not name the recovery plugin, it postpones with "the recovery
+  plugin is not enabled", and the next start saves the entry again. No apply runs without it.
+  Recovery therefore starts with the updates a 1.2.0 toolkit installs; the install that brings
+  1.2.0 has none.
 - **Two install modes, `manual` and `ask`.** `mcp_toolkit/updates/install_mode` is `ask` (the
   default: the dock offers a release whose manifest and signature have been verified, and the
   zip downloads only when the user clicks Update) or `manual` (links only); any other value
@@ -146,9 +174,13 @@ plugin's `_exit_tree` when the editor exits for any reason other than a disable.
 
 ## Consequences
 
-- **A release that installs but does not load cannot be undone from inside,** since the updater
-  is part of what failed. The six-minor release gate, the manifest's Godot floor and the backup,
-  with its troubleshooting entry, limit the damage.
+- **A release that installs but does not load is undone from outside the toolkit,** since the
+  updater is part of what failed: the recovery plugin puts the backup back at the next start and
+  asks for a restart. A release that loads but misbehaves is not undone; the six-minor release
+  gate, the manifest's Godot floor and the backup, with its troubleshooting entry, limit that.
+- **`project.godot` changes while an update is in flight:** the recovery plugin's entry appears
+  at staging and goes once the update settles. A teammate whose checkout has the entry but not
+  the folder sees the editor's warning that the addon failed to load.
 - **The first release that ships the installer updates itself from then on;** older installs
   update by hand once.
 - **A stolen release key, with access to the repository, reaches the clients that have not yet

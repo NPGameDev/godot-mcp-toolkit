@@ -34,8 +34,9 @@ extends Node
 
 ## Emitted when anything the badge or the prompt shows may have changed.
 signal state_changed
-## Emitted once per start, when the installer enters the tree, after the settle and
-## before the first [signal state_changed]. [param settled] is what [method settled]
+## Emitted once per start, after the settle: when the installer enters the tree, before the
+## first [signal state_changed], or, while another editor's exit may still be applying an
+## update, once that apply is past its window. [param settled] is what [method settled]
 ## returns, whatever its report.
 signal update_settled(settled: Dictionary)
 
@@ -66,6 +67,7 @@ const UpdateCheckRunner := preload("res://addons/godot_mcp_toolkit/versioning/up
 const UpdateCheckFailure := preload("res://addons/godot_mcp_toolkit/self_update/update_check_failure.gd")
 const RestartGate := preload("res://addons/godot_mcp_toolkit/self_update/restart_gate.gd")
 const EditorRestartProbe := preload("res://addons/godot_mcp_toolkit/self_update/editor_restart_probe.gd")
+const RecoveryFiles := preload("res://addons/godot_mcp_toolkit/self_update/recovery_files.gd")
 
 ## [method state] values. [constant IDLE]: nothing to install, the badge links only.
 const IDLE := "idle"
@@ -86,6 +88,7 @@ const NOTICE_FAILED := UpdateNotice.FAILED
 
 const _MANIFEST_TIMEOUT_SEC := 15.0
 const _ARCHIVE_TIMEOUT_SEC := 120.0
+const _RECOVERY_NOTE := "The update may not install when you close the editor: %s."
 
 # What the installer waits for.
 const _WAITING_NONE := 0
@@ -119,6 +122,9 @@ var _guard_note: String = ""
 # The Godot floor of a verified release this editor is below, and its version.
 var _floor_note: String = ""
 var _floor_version: String = ""
+var _recovery: RecoveryFiles = null
+# Why the last install of the recovery plugin failed, empty when it worked.
+var _recovery_failure: String = ""
 var _changed_files := PackedStringArray()
 # The files in the addon folder that the release does not list, which an install deletes.
 var _discarded_files := PackedStringArray()
@@ -127,6 +133,8 @@ var _manifest_bytes := PackedByteArray()
 # The last apply's result, shown until the user closes it.
 var _notice := {}
 var _settled := {}
+# Whether the start's settle found another editor's exit possibly still applying, and waits.
+var _apply_running: bool = false
 # Whether the running attempt came from a click, so its failure is shown.
 var _user_asked: bool = false
 # The version this session already tried to verify, so a failure is not retried on
@@ -149,8 +157,9 @@ var _check_timeout_sec: float = _MANIFEST_TIMEOUT_SEC
 ## [code]guard_facts[/code] (the shape [method InstallGuards.facts] returns),
 ## [code]project_settings[/code] (a stand-in [method InstallMode.read] accepts),
 ## [code]check_timeout_sec[/code] (each request of a check),
-## [code]stage_budget_ms[/code] (each frame's staging) and [code]restart_probe[/code]
-## (a stand-in for [code]editor_restart_probe.gd[/code]).
+## [code]stage_budget_ms[/code] (each frame's staging), [code]restart_probe[/code]
+## (a stand-in for [code]editor_restart_probe.gd[/code]) and [code]recovery[/code] (a
+## stand-in for [code]recovery_files.gd[/code], which otherwise gets these options).
 func _init(runner: UpdateCheckRunner, options: Dictionary = {}) -> void:
 	_runner = runner
 	_options = options
@@ -163,6 +172,8 @@ func _init(runner: UpdateCheckRunner, options: Dictionary = {}) -> void:
 	var probe: EditorRestartProbe = options.get("restart_probe", null)
 	_restart_gate = RestartGate.new(probe if probe != null else EditorRestartProbe.new())
 	_restart_gate.view_changed.connect(_on_view_changed)
+	var recovery: RecoveryFiles = options.get("recovery", null)
+	_recovery = recovery if recovery != null else RecoveryFiles.new(options)
 
 
 func _ready() -> void:
@@ -226,6 +237,14 @@ func note_text() -> String:
 	if not _check_note.is_empty():
 		return _check_note
 	return _floor_note if _floor_version == _version else ""
+
+
+## Why the exit may not install the staged update: the recovery plugin it needs is not in
+## place. An empty string outside [constant READY] or when the plugin is in place.
+func recovery_note() -> String:
+	if _state != READY or _recovery_failure.is_empty():
+		return ""
+	return _RECOVERY_NOTE % _recovery_failure
 
 
 ## Whether the last check failed, so the badge says why.
@@ -294,7 +313,8 @@ func notice() -> Dictionary:
 
 
 ## What the settle at this editor's start found: what [method UpdateSettler.settle] returns,
-## or an empty dictionary when this editor stays out of the update folder. Unlike
+## or an empty dictionary when this editor stays out of the update folder or still waits
+## for an apply another editor's exit may be running. Unlike
 ## [method notice] it holds every report, the waiting one and its reason included.
 func settled() -> Dictionary:
 	return _settled
@@ -380,6 +400,11 @@ func _evaluate() -> void:
 	# waiting for its real exit must outlive a build or an import.
 	if _stays_out:
 		_guard_note = InstallGuards.describe(InstallGuards.HEADLESS)
+		_version = newer
+		_set_state(IDLE)
+		return
+	# A verify or a stage would write over the journal that apply still holds.
+	if _apply_running:
 		_version = newer
 		_set_state(IDLE)
 		return
@@ -653,6 +678,8 @@ func _on_staged(outcome: Dictionary) -> void:
 		_keep_only_verified()
 		_fail(str(outcome["reason"]))
 		return
+	# In place before the journal says staged, so no exit applies an update without it.
+	_install_recovery(_version)
 	if not _write_record(UpdateJournal.STAGED):
 		_fail("could not write to the update folder")
 		return
@@ -729,13 +756,55 @@ func _cancel() -> void:
 
 
 # Settles what the editor's last exit left and turns a result worth showing into the
-# notice.
+# notice. While another editor's exit may still be applying, nothing is settled or
+# announced, and the settle runs again once that apply's window is past.
 func _settle_last_update() -> void:
-	_settled = UpdateLifecycle.settle_at_start(_options)
-	var report := str(_settled.get("report", ""))
+	var outcome := UpdateLifecycle.settle_at_start(_options)
+	var report := str(outcome.get("report", ""))
+	_apply_running = report == UpdateSettler.APPLYING
+	if _apply_running:
+		get_tree().create_timer(float(outcome["recheck_sec"])).timeout.connect(_on_apply_window_passed)
+		return
+	_settled = outcome
 	if report == UpdateSettler.UPDATED or report == UpdateSettler.FAILED:
 		_notice = UpdateNotice.of_settle(_settled, report == UpdateSettler.UPDATED)
+	# The release did not load in this Godot, so offering it again would fail the same way.
+	if bool(_settled.get("restored", false)) and _runner != null:
+		_runner.dismiss(str(_settled["to"]))
+	if not _stays_out:
+		_reconcile_recovery()
 	update_settled.emit(_settled)
+
+
+func _on_apply_window_passed() -> void:
+	if not is_inside_tree():
+		return
+	_settle_last_update()
+	if not _apply_running:
+		_evaluate()
+
+
+# The recovery plugin is in place exactly while the settled journal has an update on its way
+# in or just in, which the plugin may have to put back at the next start.
+func _reconcile_recovery() -> void:
+	var journal := UpdateJournal.read(_update_folder)
+	var state := str(journal["state"])
+	# An applied journal naming the running version outlives the settle only when its delete
+	# failed. Nothing is left to put back, and the recovery plugin would take this running
+	# toolkit for one enabled but never started.
+	var landed := state == UpdateJournal.APPLIED and str(journal["to"]) == _installed_version()
+	if landed or state not in [UpdateJournal.STAGED, UpdateJournal.APPLYING, UpdateJournal.APPLIED]:
+		_recovery.remove()
+	elif not _recovery.is_in_place():
+		_install_recovery(str(journal["to"]))
+
+
+# A failed install is logged and shown, and the update goes on: the exit reads project.godot
+# itself and postpones an apply the recovery plugin could not cover.
+func _install_recovery(version: String) -> void:
+	_recovery_failure = _recovery.install()
+	if not _recovery_failure.is_empty():
+		UpdateFolder.log_line("%s: %s" % [version, _recovery_failure], _update_folder)
 
 
 # The version in the addon folder's plugin.cfg: the running toolkit's, since the

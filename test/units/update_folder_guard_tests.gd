@@ -2,8 +2,9 @@
 extends RefCounted
 ## Seam tests for the update folder's two protections: FileGuard refuses it to tool calls,
 ## through resolve_safe and the file tools, and the export strip (core/export_strip.gd) keeps
-## it out of a build without counting it in leak detection. run() is a coroutine: each tool
-## case awaits registry.call_command().
+## it out of a build without counting it in leak detection; the guard and the strip treat the
+## recovery plugin's folder the same way. run() is a coroutine: each tool case awaits
+## registry.call_command().
 
 const Testing := preload("res://test/units/testing.gd")
 const FileGuard := preload("res://addons/godot_mcp_toolkit/security/file_guard.gd")
@@ -13,6 +14,7 @@ const AssetCommands := preload("res://addons/godot_mcp_toolkit/commands/asset_co
 const FolderCommands := preload("res://addons/godot_mcp_toolkit/commands/folder_commands.gd")
 const ResourceCommands := preload("res://addons/godot_mcp_toolkit/commands/resource_commands.gd")
 const ScriptCommands := preload("res://addons/godot_mcp_toolkit/commands/script_commands.gd")
+const RecoveryFiles := preload("res://addons/godot_mcp_toolkit/self_update/recovery_files.gd")
 
 const _FOLDER := "res://addons/.godot_mcp_toolkit_update"
 const _STRIP_SOURCE := "res://addons/godot_mcp_toolkit/core/export_strip.gd"
@@ -31,8 +33,11 @@ static func run(testing: Testing) -> void:
 	ScriptCommands.register(registry, null)
 	await _test_tools_refuse_reads(testing, registry)
 	await _test_tools_refuse_writes(testing, registry)
+	await _test_tools_refuse_writes_into_the_recovery_folder(testing, registry)
 	_test_strip_skips_the_folder(testing)
 	_test_strip_leaves_others_alone(testing)
+	_test_guard_names_the_recovery_folder(testing)
+	_test_strip_skips_the_recovery_folder(testing)
 
 
 static func _test_guard_reserves_this_folder(testing: Testing) -> void:
@@ -175,6 +180,30 @@ static func _test_tools_refuse_writes(testing: Testing, registry: MCPToolkitComm
 	print("")
 
 
+# The recovery plugin's folder holds the scripts the next editor start runs, so the tools
+# refuse it as they refuse the update folder.
+static func _test_tools_refuse_writes_into_the_recovery_folder(
+		testing: Testing, registry: MCPToolkitCommandRegistry) -> void:
+	testing.begin("The file tools refuse a write into the recovery plugin's folder")
+	var folder := FileGuard.RECOVERY_FOLDER
+	var folder_target := folder + "/guard_test_absent"
+	var folder_created: Dictionary = await registry.call_command("folder.create", {"path": folder_target})
+	var folder_landed := DirAccess.dir_exists_absolute(folder_target)
+	_clear_folder_target(folder_target)
+	var script_written: Dictionary = await registry.call_command("script.write", {
+		"file_path": folder + "/journal.json", "content": "{}"})
+	var resource_written: Dictionary = await registry.call_command("resource.write", {
+		"file_path": "res://ADDONS/.GODOT_MCP_TOOLKIT_RECOVERY/guard_test_absent.tres"})
+	var refusal := FileGuard.resolve_safe(folder + "/recovery_plugin.gd")
+	testing.eq(folder_created.get("code"), "PATH_DENIED", "folder.create inside it → PATH_DENIED")
+	testing.ok(not folder_landed, "folder.create inside it → no folder on disk")
+	testing.eq(script_written.get("code"), "PATH_DENIED", "script.write inside it → PATH_DENIED")
+	testing.eq(resource_written.get("code"), "PATH_DENIED", "resource.write in another letter case → PATH_DENIED")
+	testing.eq(refusal.get("reason"), "%s/ is reserved for the toolkit's recovery plugin; %s" % [
+			FileGuard.RECOVERY_FOLDER, FileGuard.SAME_FOLDER_NOTE], "the refusal says the folder is reserved")
+	print("")
+
+
 # remove_absolute refuses a folder that is not empty, so this can only clear what the case
 # itself left behind.
 static func _clear_folder_target(folder_target: String) -> void:
@@ -235,6 +264,66 @@ static func _test_strip_leaves_others_alone(testing: Testing) -> void:
 	testing.ok(_offer(strip, "res://addons/godot_mcp_toolkit/plugin.cfg"), "a toolkit file → still skipped")
 	testing.ok(bool(strip.get("_saw_addon_nonscript")), "a toolkit file → still counts for leak detection")
 	print("")
+
+
+static func _test_guard_names_the_recovery_folder(testing: Testing) -> void:
+	testing.begin("FileGuard.is_recovery_folder: the recovery plugin's folder in any spelling")
+	for path: String in [
+		_recovery_folder(),
+		RecoveryFiles.PLUGIN_CFG,
+		"res://ADDONS/.GODOT_MCP_TOOLKIT_RECOVERY/plugin.cfg",
+		"res://addons/.Godot_MCP_Toolkit_Recovery/plugin.gd",
+		"res://ADDONS/.GODOT_MCP_TOOLKIT_RECOVERY",
+		"res://addonſ/.godot_mcp_toolkit_recovery/plugin.cfg",
+		"res://addons/.godot_mcp_toolkıt_recovery/plugin.cfg",
+		"res://addons/.godot_mcp_toolKit_recovery/plugin.cfg",
+		"res://addons/.godot_mcp_toolkİt_recovery/plugin.cfg",
+		"res://./addons/.godot_mcp_toolkit_recovery/plugin.cfg",
+		"res://addons//.godot_mcp_toolkit_recovery//plugin.cfg",
+		"res://addons\\.godot_mcp_toolkit_recovery\\plugin.gd",
+		"res://addons\\.godot_mcp_toolkit_recovery\\",
+		"res://addons/.godot_mcp_toolkit_recovery./plugin.cfg",
+		"res://addons/.godot_mcp_toolkit_recovery /plugin.cfg",
+		"res://addons/.godot_mcp_toolkit_recovery::$INDEX_ALLOCATION/plugin.cfg",
+		"res://addons/.godot_mcp_toolkit_recovery:stream",
+	]:
+		testing.ok(FileGuard.is_recovery_folder(path), "'%s' → the recovery folder" % path)
+	for path: String in [
+		"res://addons/.godot_mcp_toolkit_recovery_x/plugin.cfg",
+		"res://addons/.godot_mcp_toolkit_recoveryx/plugin.cfg",
+		"res://addons/godot_mcp_toolkit_recovery/plugin.cfg",
+		"res://.godot_mcp_toolkit_recovery/plugin.cfg",
+		"res://game/addons/.godot_mcp_toolkit_recovery/plugin.cfg",
+		"res://addons/godot_mcp_toolkit/self_update/recovery/plugin.cfg",
+		_FOLDER + "/journal.json",
+	]:
+		testing.ok(not FileGuard.is_recovery_folder(path), "'%s' → not the recovery folder" % path)
+	print("")
+
+
+static func _test_strip_skips_the_recovery_folder(testing: Testing) -> void:
+	testing.begin("Export strip: the recovery plugin's folder is skipped and left out of the leak flags")
+	var strip: Variant = _strip_on_a_stand_in()
+	if strip == null:
+		testing.ok(false, "export_strip.gd compiles on the stand-in base")
+		print("")
+		return
+	for path: String in [
+		RecoveryFiles.PLUGIN_CFG,
+		_recovery_folder() + "/plugin.gd",
+		"res://ADDONS/.GODOT_MCP_TOOLKIT_RECOVERY/plugin.gd",
+		"res://addons\\.godot_mcp_toolkit_recovery\\plugin.gd",
+		"res://addons/.godot_mcp_toolkit_recovery./plugin.gd",
+	]:
+		testing.ok(_offer(strip, path), "'%s' → skipped" % path)
+	testing.ok(not bool(strip.get("_saw_addon_script")), "no path in it counts as an addon script")
+	testing.ok(not bool(strip.get("_saw_addon_nonscript")), "no path in it counts as an addon non-script")
+	testing.ok(not _offer(strip, "res://addons/.godot_mcp_toolkit_recovery_x/plugin.gd"), "a look-alike → kept")
+	print("")
+
+
+static func _recovery_folder() -> String:
+	return RecoveryFiles.PLUGIN_CFG.get_base_dir()
 
 
 # Whether the plugin skipped the path when offered it, as the engine does.

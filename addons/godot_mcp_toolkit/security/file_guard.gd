@@ -10,7 +10,7 @@ extends RefCounted
 ## also refuses version-control, engine and project metadata.
 ##
 ## Every check against a host folder (the project root, res://addons, the
-## toolkit's source, its update folder and its user:// folder) compares a case-folded form of the
+## toolkit's source, its update and recovery folders and its user:// folder) compares a case-folded form of the
 ## path with Windows alias spellings cut away. Windows opens a folder under
 ## another letter case or an alias spelling (a trailing dot or space, an NTFS
 ## stream, an 8.3 short name); macOS opens it under another letter case or a
@@ -35,6 +35,10 @@ const TOOLKIT_SOURCE_DIR := "res://addons/godot_mcp_toolkit/"
 ## The folder the self-update keeps everything in. Test a path against it with
 ## [method is_update_folder].
 const UPDATE_FOLDER := "res://addons/.godot_mcp_toolkit_update"
+
+## The folder the recovery plugin is installed into while an update is in flight. Test a
+## path against it with [method is_recovery_folder].
+const RECOVERY_FOLDER := "res://addons/.godot_mcp_toolkit_recovery"
 
 ## Ends every refusal of a host folder, so a caller who spelled the folder another way
 ## learns why the path counts as that folder.
@@ -98,6 +102,15 @@ static func is_toolkit_source(path: String) -> bool:
 static func is_update_folder(path: String) -> bool:
 	var form := _comparison_form(path)
 	return form == UPDATE_FOLDER or form.begins_with(UPDATE_FOLDER + "/")
+
+
+## Whether [param path] is the recovery plugin's folder or a path inside it, under the
+## spellings and limit [method is_update_folder] has. The folder matches whole.
+##
+## Returns [code]true[/code] for the folder itself and every path under it.
+static func is_recovery_folder(path: String) -> bool:
+	var form := _comparison_form(path)
+	return form == RECOVERY_FOLDER or form.begins_with(RECOVERY_FOLDER + "/")
 
 
 ## Whether [param path] is a host folder, one a delete must never remove: the project root,
@@ -214,6 +227,11 @@ static func resolve_safe(
 	if is_update_folder(canonical):
 		return _denied(
 			"%s/ is reserved for the toolkit's self-update; %s" % [UPDATE_FOLDER, SAME_FOLDER_NOTE])
+	# The recovery plugin's folder holds scripts the next editor start runs, so a tool call
+	# must not write there either. The self-update writes it without this guard.
+	if is_recovery_folder(canonical):
+		return _denied(
+			"%s/ is reserved for the toolkit's recovery plugin; %s" % [RECOVERY_FOLDER, SAME_FOLDER_NOTE])
 
 	# Canonicalize and re-assert the path still resolves under its boundary root
 	# (lexical simplify + prefix substitution — NOT OS-symlink resolution). On

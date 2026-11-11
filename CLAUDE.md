@@ -369,9 +369,12 @@ quick operational facts only.
   4.7: the self-update end to end on scratch projects, headless, against a local
   server; `scripts/test_framework/update_flow.sh`), the `release-builds` job (the
   bash and PowerShell release builds write the same release;
-  `scripts/test_framework/check_release_builds.sh`), and the `apply-kill` job (4.2 and
-  4.7: the self-update's swap in real editors, killed at each step;
-  `test/apply_kill_driver/run_legs.sh`). An aggregate
+  `scripts/test_framework/check_release_builds.sh`), and the `apply-kill` job (the
+  self-update's swap in real editors, killed at each step, plus the recovery plugin's legs
+  and a held toolkit folder; `test/apply_kill_driver/run_legs.sh`). A push or PR runs it on
+  4.2 through 4.7 on Linux and on 4.7 on macOS; the `macos-kill` input, which a `ci.yml`
+  dispatch sets by hand and `release.yml` sets on its dry run and tag run, adds macOS on
+  every version. An aggregate
   **`Toolkit floor OK`** gate `needs:` every floor job — it is the only name
   that ever becomes a required check (never an individual matrix row).
 - **Cross-version** (`.github/workflows/cross-version.yml`) — behavioral
@@ -396,9 +399,10 @@ quick operational facts only.
   `test/update_gui_driver/`). The server repo runs the same two-editor matrix
   for its own changes.
 - **Release** (`.github/workflows/release.yml`) — runs on `v*` tag push; GATES
-  on the deep behavioral tier (`behavioral: uses: cross-version.yml` +
-  `needs:`), then validates tag matches `plugin.cfg` version, builds the
-  plugin zip and its `.update.json` manifest via
+  on the deep behavioral tier (`behavioral: uses: cross-version.yml`) and the
+  whole floor with the macOS apply-kill rows (`floor: uses: ci.yml`,
+  `macos-kill: true`), both in `needs:`, then validates tag matches `plugin.cfg`
+  version, builds the plugin zip and its `.update.json` manifest via
   `scripts/build-plugin-release.sh`, install-smokes the zip (unzip into a
   scratch project, headless 4.7.0 boot, assert `[MCPServer] listening`),
   checks the booted tree against the zip's release file list and the manifest

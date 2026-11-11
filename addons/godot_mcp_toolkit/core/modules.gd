@@ -43,6 +43,7 @@ const UpdateApplier := preload("res://addons/godot_mcp_toolkit/self_update/updat
 const UpdateInstaller := preload("res://addons/godot_mcp_toolkit/self_update/update_installer.gd")
 const UpdateSettler := preload("res://addons/godot_mcp_toolkit/self_update/update_settler.gd")
 const UpdateLifecycle := preload("res://addons/godot_mcp_toolkit/self_update/update_lifecycle.gd")
+const RecoveryFiles := preload("res://addons/godot_mcp_toolkit/self_update/recovery_files.gd")
 const SetupSteps := preload("res://addons/godot_mcp_toolkit/core/setup_steps.gd")
 const SetupStepTracker := preload("res://addons/godot_mcp_toolkit/core/setup_step_tracker.gd")
 const Consent := preload("res://addons/godot_mcp_toolkit/core/consent.gd")

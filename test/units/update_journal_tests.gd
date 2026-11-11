@@ -12,6 +12,7 @@ const UpdateFixtures := preload("res://test/units/update_fixtures.gd")
 static func run(testing: Testing) -> void:
 	_test_round_trip(testing)
 	_test_pinned_journal(testing)
+	_test_pinned_applying_journal(testing)
 	_test_states(testing)
 	_test_defaults(testing)
 	_test_bad_versions(testing)
@@ -19,6 +20,7 @@ static func run(testing: Testing) -> void:
 	_test_mistyped_fields(testing)
 	_test_unknown_keys(testing)
 	_test_restaged(testing)
+	_test_applying_at_and_restored(testing)
 	_test_write_that_fails(testing)
 	_test_clear(testing)
 	_test_remove_and_exists(testing)
@@ -77,6 +79,20 @@ static func _test_pinned_journal(testing: Testing) -> void:
 			"expected_tree_hash": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
 			"compatible_server": "1.1.0", "reason": "a held file", "attempts": 2,
 			"changed_files": PackedStringArray(["core/a.gd"])}, "this and every later version reads it whole")
+	print("")
+
+
+static func _test_pinned_applying_journal(testing: Testing) -> void:
+	testing.begin("Update journal: the applying journal 1.2.0 writes")
+	var folder := UpdateFixtures.scratch("journal_pinned_applying")
+	_write_text(folder, UpdateFixtures.PINNED_1_2_0_APPLYING_JOURNAL)
+	var record := UpdateJournal.read(folder)
+	UpdateFixtures.remove(folder)
+	testing.eq(record, {"state": "applying", "from": "1.1.0", "to": "1.2.0", "backup": "backup-1.1.0",
+			"expected_tree_hash": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+			"compatible_server": "1.1.0", "reason": "", "attempts": 1,
+			"changed_files": PackedStringArray(["core/a.gd"]), "applying_at": 1794300000},
+			"this and every later version reads it whole, with the time")
 	print("")
 
 
@@ -195,6 +211,35 @@ static func _test_restaged(testing: Testing) -> void:
 	var mistyped := _read_fields("journal_restaged_mistyped", {"format": 1, "state": "staged", "from": "1.1.0",
 			"to": "1.2.0", "restaged": "yes"})
 	testing.ok(not mistyped.has("restaged"), "a value that is not true → not marked")
+	print("")
+
+
+# Both keys exist only once set, so a journal without them stays the pinned text.
+static func _test_applying_at_and_restored(testing: Testing) -> void:
+	testing.begin("Update journal: the time of the applying write and the mark of a restore")
+	var folder := UpdateFixtures.scratch("journal_applying_at")
+	var path := ProjectSettings.globalize_path(folder).path_join("journal.json")
+	UpdateJournal.write({"state": "applying", "from": "1.1.0", "to": "1.2.0", "applying_at": 1794300000}, folder)
+	var timed := UpdateJournal.read(folder)
+	UpdateJournal.write({"state": "not_applied", "from": "1.1.0", "to": "1.2.0", "restored": true}, folder)
+	var restored := UpdateJournal.read(folder)
+	UpdateJournal.write({"state": "staged", "from": "1.1.0", "to": "1.2.0", "restored": false}, folder)
+	var unset_text := FileAccess.get_file_as_string(path)
+	var unset := UpdateJournal.read(folder)
+	UpdateFixtures.remove(folder)
+	testing.eq(timed.get("applying_at", -1), 1794300000, "applying_at written → read back as an integer")
+	testing.eq(typeof(timed.get("applying_at", -1.0)), TYPE_INT, "of the integer type, never a float")
+	testing.eq(restored.get("restored", false), true, "restored written true → read true")
+	testing.ok(not unset_text.contains("applying_at") and not unset_text.contains("restored"),
+			"neither set → neither in the file")
+	testing.ok(not unset.has("applying_at") and not unset.has("restored"), "and neither in the record")
+	var mistyped := _read_fields("journal_applying_at_mistyped", {"format": 1, "state": "applying", "from": "1.1.0",
+			"to": "1.2.0", "applying_at": "soon", "restored": "yes"})
+	var negative := _read_fields("journal_applying_at_negative", {"format": 1, "state": "applying", "from": "1.1.0",
+			"to": "1.2.0", "applying_at": -5})
+	testing.eq(mistyped["state"], "applying", "a mistyped value → the journal still reads")
+	testing.ok(not mistyped.has("applying_at") and not mistyped.has("restored"), "and neither key is set")
+	testing.ok(not negative.has("applying_at"), "a negative time → not set")
 	print("")
 
 

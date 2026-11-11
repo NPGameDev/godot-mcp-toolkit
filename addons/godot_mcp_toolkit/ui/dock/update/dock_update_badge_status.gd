@@ -31,6 +31,9 @@ const POSTPONED := "postponed"
 ## The [param facts] key for what [code]ServerPinMove.preview[/code] returned for the
 ## release on offer, a Dictionary.
 const PIN_PREVIEW := "pin_preview"
+## The [param facts] key for why the exit may not install the staged update, a String. The
+## ready line shows only this note.
+const RECOVERY_NOTE := "recovery_note"
 
 const _DOWNLOADING_TEXT := "Downloading %s…"
 const _PREPARING_TEXT := "Preparing %s…"
@@ -61,13 +64,16 @@ const _PIN_WRITE_FAILED_TEXT := "This version is tested with MCP server %s, but 
 const _PIN_FILE_MALFORMED_TEXT := ("This version is tested with MCP server %s, but .mcp.json couldn't be updated because "
 		+ "it isn't valid JSON, or its mcpServers isn't an object. Fix the file, then click Update .mcp.json.")
 const _NOT_INSTALLED_TEXT := "%s. Version %s is still installed. Install log: %s"
+const _RESTORED_TEXT := ("%s, so %s was put back and is installed. See \"The toolkit is off after an update\" in "
+		+ "the troubleshooting guide (docs/troubleshooting.md). Install log: %s")
 const _NEXT_RELEASE_TEXT := "The toolkit offers the next release once it is published and checked."
 
 
 ## The status line for [param version] in the installer's [param state], one of the
 ## [code]UpdateInstaller[/code] state names. [param facts] holds what the state's line
 ## needs, under [constant CHANGED], [constant ERROR], [constant NOTE], [constant VIEW],
-## [constant POSTPONED] and [constant PIN_PREVIEW]; a missing key reads as empty. Returns
+## [constant POSTPONED], [constant PIN_PREVIEW] and [constant RECOVERY_NOTE]; a missing
+## key reads as empty. Returns
 ## an empty string when the state has nothing to say.
 static func install_line(state: String, version: String, facts: Dictionary) -> String:
 	match state:
@@ -112,15 +118,21 @@ static func ready_view_text(version: String, view: Dictionary, retry: bool = fal
 
 ## The status line under the last install's result, from the installer's
 ## [param notice]. A failed install names its reason, the version kept and the install
-## log at [param log_path]. An installed one says what the .mcp.json pin move did, from
-## [param pin_move], an outcome in the shape [code]ServerPinMove.outcome[/code] returns:
-## the server it moved to, or why its write failed. Any other outcome, or an empty
-## dictionary, says nothing.
+## log at [param log_path]; one the recovery plugin answered by putting the old version back
+## says so and names the troubleshooting steps. An installed one says what the .mcp.json
+## pin move did, from [param pin_move], an outcome in the shape
+## [code]ServerPinMove.outcome[/code] returns: the server it moved to, or why its write
+## failed. Any other outcome, or an empty dictionary, says nothing.
 static func notice_line(notice: Dictionary, log_path: String, pin_move: Dictionary) -> String:
 	if str(notice.get(UpdateNotice.KIND, "")) == UpdateNotice.UPDATED:
 		return _pin_move_line(pin_move)
 	var reason := str(notice.get(UpdateNotice.REASON, ""))
-	var line := _NOT_INSTALLED_TEXT % [_sentence(reason), str(notice.get(UpdateNotice.FROM_VERSION, "")), log_path]
+	var from_version := str(notice.get(UpdateNotice.FROM_VERSION, ""))
+	# No backup is left once the recovery plugin put it back, so the line points at the
+	# troubleshooting steps.
+	if bool(notice.get(UpdateNotice.RESTORED, false)):
+		return _RESTORED_TEXT % [_sentence(reason), from_version, log_path]
+	var line := _NOT_INSTALLED_TEXT % [_sentence(reason), from_version, log_path]
 	# A hand download checks no signature, and in a leak the latest release can be the
 	# old key's too, so this notice points at the toolkit's own check and offers no link.
 	if reason == UpdateApplier.UNTRUSTED_SIGNATURE:
@@ -157,7 +169,7 @@ static func _offer_line(facts: Dictionary) -> String:
 
 
 # The staged update's line, or the ready view while it is open, then why the last exit
-# left it uninstalled when it did.
+# left it uninstalled when it did, then why the next exit may not install it.
 static func _ready_line(version: String, facts: Dictionary) -> String:
 	var view: Dictionary = facts.get(VIEW, {})
 	var postponed := str(facts.get(POSTPONED, ""))
@@ -169,6 +181,9 @@ static func _ready_line(version: String, facts: Dictionary) -> String:
 		line = (_READY_RETRY_TEXT if retry else _READY_TEXT) % version
 	if retry:
 		line += "\n" + _POSTPONED_TEXT % postponed
+	var recovery_note := str(facts.get(RECOVERY_NOTE, ""))
+	if not recovery_note.is_empty():
+		line += "\n" + recovery_note
 	return line
 
 

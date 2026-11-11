@@ -409,7 +409,7 @@ contract.
 (`scene.create` and the asset writers) return a `status` discriminator, so a blind
 retry is safe by default:
 
-<!-- data-depicts="addons/godot_mcp_toolkit/commands/scene_commands.gd addons/godot_mcp_toolkit/commands/resource_commands.gd addons/godot_mcp_toolkit/security/file_guard.gd addons/godot_mcp_toolkit/commands/editor_helpers.gd" data-verified="f63ae30" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/commands/scene_commands.gd addons/godot_mcp_toolkit/commands/resource_commands.gd addons/godot_mcp_toolkit/security/file_guard.gd addons/godot_mcp_toolkit/commands/editor_helpers.gd" data-verified="ffe0ab2" -->
 ```mermaid
 flowchart TD
     create["create command with if_exists"] --> exists{"target exists?"}
@@ -419,7 +419,7 @@ flowchart TD
     pol -->|"fail"| ae["ALREADY_EXISTS"]
     pol -->|"replace"| repl["overwrite → status: replaced"]
 ```
-*Figure 8 — the idempotent create / if_exists decision · verified f63ae30*
+*Figure 8 — the idempotent create / if_exists decision · verified ffe0ab2*
 
 The shared `write_asset_with_settle` helper centralises the path-guard → extension-allowlist →
 `if_exists` → write → import-settle bracket for assets/textures/sounds, so the idempotency
@@ -512,7 +512,7 @@ identity (name/path pairs + the `autoload/<name>` = `*<path>` derivation) lives 
 leaf (`core/autoload_identity.gd`) that both the registration module and the export-strip plugin
 preload, so the two share one SSOT without coupling to each other.
 
-<!-- data-depicts="addons/godot_mcp_toolkit/plugin.gd addons/godot_mcp_toolkit/core/plugin_composer.gd addons/godot_mcp_toolkit/core/autoload_registration.gd addons/godot_mcp_toolkit/core/autoload_identity.gd addons/godot_mcp_toolkit/ui/mcp_json_write_flow.gd addons/godot_mcp_toolkit/ui/toolkit_dialog_presenter.gd addons/godot_mcp_toolkit/transport/builtin_command_registration.gd addons/godot_mcp_toolkit/transport/mcp_server.gd addons/godot_mcp_toolkit/transport/debug_session_tracker.gd addons/godot_mcp_toolkit/transport/debug_bridge.gd addons/godot_mcp_toolkit/core/remote_deploy_detector.gd addons/godot_mcp_toolkit/self_update/update_installer.gd addons/godot_mcp_toolkit/self_update/update_lifecycle.gd addons/godot_mcp_toolkit/ui/mcp_json/server_pin_move.gd" data-verified="f2687ab" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/plugin.gd addons/godot_mcp_toolkit/core/plugin_composer.gd addons/godot_mcp_toolkit/core/autoload_registration.gd addons/godot_mcp_toolkit/core/autoload_identity.gd addons/godot_mcp_toolkit/ui/mcp_json_write_flow.gd addons/godot_mcp_toolkit/ui/toolkit_dialog_presenter.gd addons/godot_mcp_toolkit/transport/builtin_command_registration.gd addons/godot_mcp_toolkit/transport/mcp_server.gd addons/godot_mcp_toolkit/transport/debug_session_tracker.gd addons/godot_mcp_toolkit/transport/debug_bridge.gd addons/godot_mcp_toolkit/core/remote_deploy_detector.gd addons/godot_mcp_toolkit/self_update/update_installer.gd addons/godot_mcp_toolkit/self_update/update_lifecycle.gd addons/godot_mcp_toolkit/ui/mcp_json/server_pin_move.gd addons/godot_mcp_toolkit/self_update/recovery_files.gd addons/godot_mcp_toolkit/self_update/recovery/recovery_plugin.gd addons/godot_mcp_toolkit/self_update/recovery/recovery_journal.gd" data-verified="ffe0ab2" -->
 ```mermaid
 flowchart TD
     plugin["plugin.gd<br/>_enter_tree / _exit_tree (thin)"]
@@ -537,6 +537,7 @@ flowchart TD
     composer --> upd["update check runner<br/>(plugin child · read by the dock's badge and status panel)"]
     composer --> inst["update installer<br/>(plugin child · follows the check runner ·<br/>settles the last exit at start · driven by the badge)"]
     upd -->|"newer version"| inst
+    inst -->|"in place at staging · kept or removed at each start"| recov["recovery plugin<br/>(second EditorPlugin · addons/.godot_mcp_toolkit_recovery/ ·<br/>only while an update is in flight)"]
     composer --> pin["server pin move<br/>(RefCounted · holds this start's outcome)"]
     inst -->|"update_settled, connected before it enters the tree"| pin
     composer --> dock["dock UI"]
@@ -546,7 +547,7 @@ flowchart TD
     plugin -.->|"_exit_tree → Handle.dispose() — reverse order"| composer
     plugin -.->|"_exit_tree after dispose, unless disabling"| apply["UpdateLifecycle.apply_at_exit()<br/>(swaps a staged update in · never in a headless editor)"]
 ```
-*Figure 10 — plugin composition root · verified f2687ab*
+*Figure 10 — plugin composition root · verified ffe0ab2*
 
 The composer builds in a behaviour-critical order: registry and server first, then the
 debug-session tracker and the debugger plugin that feeds it, then all built-in commands, then
@@ -604,8 +605,25 @@ step seen, it has the installer decide again, since the consent gate reads that 
 staged update into the addon folder while nothing can reload those files. A headless editor neither
 settles nor applies (`self_update/update_lifecycle.gd`), and a disable skips the apply:
 `_disable_plugin()` sets a flag first, has the installer call off a running download or stage, then
-clears the update journal, so a staged update is dropped with its files instead of being installed
-into a plugin being removed.
+clears the update journal and removes the recovery plugin, so a staged update is dropped with its
+files instead of being installed into a plugin being removed.
+
+While an update is in flight the project holds a second editor plugin, the recovery plugin. Its
+template ships inside the toolkit (`self_update/recovery/`). Before the journal says `staged`, the
+installer copies it to `res://addons/.godot_mcp_toolkit_recovery/`, enables it and saves its entry in
+`project.godot` (`self_update/recovery_files.gd`); the Plugins list and the editor's scan skip a dot
+folder, and the editor still starts the plugin from that saved entry. After each start's settle the
+installer keeps it in place while the journal is `staged` or `applying`, or `applied` to a version
+other than the one running, and removes it otherwise (a headless editor changes nothing). When the
+settle finds an `applying` journal stamped within 60 seconds of now, either way, another editor's
+exit may still be applying, so the installer settles nothing, offers no install and holds
+`update_settled` until a timer runs the settle again past that window. The recovery plugin loads
+nothing from the toolkit's folder. A settle delay after the editor's first scan, when the toolkit is
+not enabled, it finishes or rolls back an apply a kill stopped, or puts the backup back over a
+version that did not load, then asks for a restart. When the toolkit is enabled but never started
+(Godot 4.2, after an update that moves a global class) it moves nothing and asks for one more
+restart; when it cannot set things right it shows the manual steps
+(`self_update/recovery/recovery_plugin.gd`, its decisions in `recovery_journal.gd`).
 
 The debugger's session state lives in `transport/debug_session_tracker.gd`, a `RefCounted` the
 unit runner can build headless: whether a game is attached and stopped at a break, the error
@@ -748,7 +766,7 @@ The toolkit assumes a **single local user with a human at the editor**; the boun
 localhost + token, not a defence against an adversary who can already write project files.
 Within that model, several layers keep an LLM's requests honest.
 
-<!-- data-depicts="addons/godot_mcp_toolkit/security/auth.gd addons/godot_mcp_toolkit/security/file_guard.gd addons/godot_mcp_toolkit/security/audit.gd addons/godot_mcp_toolkit/security/untrusted.gd addons/godot_mcp_toolkit/security/scrubber.gd addons/godot_mcp_toolkit/transport/mcp_toolkit_command_registry.gd addons/godot_mcp_toolkit/self_update/release_signature.gd addons/godot_mcp_toolkit/self_update/trust_chain.gd addons/godot_mcp_toolkit/self_update/embedded_trust_document.gd addons/godot_mcp_toolkit/self_update/release_manifest.gd addons/godot_mcp_toolkit/self_update/release_file_list.gd addons/godot_mcp_toolkit/self_update/release_archive.gd addons/godot_mcp_toolkit/self_update/release_assets.gd addons/godot_mcp_toolkit/self_update/update_downloader.gd addons/godot_mcp_toolkit/self_update/install_guards.gd addons/godot_mcp_toolkit/self_update/install_mode.gd addons/godot_mcp_toolkit/self_update/update_installer.gd addons/godot_mcp_toolkit/self_update/update_applier.gd addons/godot_mcp_toolkit/core/consent.gd" data-verified="ea9923f" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/security/auth.gd addons/godot_mcp_toolkit/security/file_guard.gd addons/godot_mcp_toolkit/security/audit.gd addons/godot_mcp_toolkit/security/untrusted.gd addons/godot_mcp_toolkit/security/scrubber.gd addons/godot_mcp_toolkit/transport/mcp_toolkit_command_registry.gd addons/godot_mcp_toolkit/self_update/release_signature.gd addons/godot_mcp_toolkit/self_update/trust_chain.gd addons/godot_mcp_toolkit/self_update/embedded_trust_document.gd addons/godot_mcp_toolkit/self_update/release_manifest.gd addons/godot_mcp_toolkit/self_update/release_file_list.gd addons/godot_mcp_toolkit/self_update/release_archive.gd addons/godot_mcp_toolkit/self_update/release_assets.gd addons/godot_mcp_toolkit/self_update/update_downloader.gd addons/godot_mcp_toolkit/self_update/install_guards.gd addons/godot_mcp_toolkit/self_update/install_mode.gd addons/godot_mcp_toolkit/self_update/update_installer.gd addons/godot_mcp_toolkit/self_update/update_applier.gd addons/godot_mcp_toolkit/core/consent.gd addons/godot_mcp_toolkit/self_update/recovery_files.gd" data-verified="ffe0ab2" -->
 ```mermaid
 flowchart TD
     llm["LLM-authored request"] --> token{"valid token?<br/>(first frame)"}
@@ -756,19 +774,20 @@ flowchart TD
     token -->|yes| filter["server-authoritative read-only filter<br/>(tools/list)"]
     filter --> audit["Audit.log_call — params hashed"]
     audit --> guard["FileGuard.resolve_safe / resolve_safe_delete / resolve_safe_user"]
-    guard --> deny["deny ..-traversal, plugin source dir, update folder,<br/>token & audit files (any case or alias spelling),<br/>reserved paths on delete"]
+    guard --> deny["deny ..-traversal, plugin source dir, update and recovery folders,<br/>token & audit files (any case or alias spelling),<br/>reserved paths on delete"]
     deny --> handler["command handler"]
     handler --> wrap["read paths → Untrusted.wrap + Scrubber.scrub"]
 ```
-*Figure 13 — request trust boundaries · verified ea9923f*
+*Figure 13 — request trust boundaries · verified ffe0ab2*
 
 - **FileGuard** (`security/file_guard.gd`) is the path keystone: `resolve_safe` confines writes
   to `res://` (rejecting `..` traversal and absolute OS paths via a globalize → simplify →
   re-verify pass, and an absolute path right after the scheme, such as `res:///…`, by a
   prefix check on the `res:///` or `user:///` start), and refuses the toolkit's own source and
   the self-update's folder, `res://addons/.godot_mcp_toolkit_update/` (`is_update_folder`),
-  which holds the staged release, the backup and the journal (the self-update itself does not
-  come through this guard); the file deletes (`file.delete`,
+  which holds the staged release, the backup and the journal, and the recovery plugin's folder,
+  `res://addons/.godot_mcp_toolkit_recovery/` (`is_recovery_folder`), whose scripts the next
+  editor start runs (the self-update itself does not come through this guard); the file deletes (`file.delete`,
   `resource.delete`, `scene.delete`, `script.delete`, through `delete_res_file`) remove only
   the project-relative path `project_relative_path` returns, and answer `PATH_DENIED` when it
   has none; `resolve_safe_delete` adds, for `file.delete`, `folder.delete`,
@@ -824,8 +843,11 @@ flowchart TD
   `self_update/update_installer.gd`). At the editor's exit the applier checks again, offline and
   from the stored chain, the guards, the signature, the engine floor, the zip's hash, that the
   version is newer and the zip's layout against its list, before its two renames
-  (`self_update/update_applier.gd`). The tools cannot reach the staged files: FileGuard refuses
-  the update folder, above.
+  (`self_update/update_applier.gd`); it also waits while the `project.godot` on disk does not
+  enable the recovery plugin, which puts the backup back if the new version does not load. That
+  plugin is copied from the running toolkit's own folder, never from the stage
+  (`self_update/recovery_files.gd`). The tools cannot reach the staged files or the recovery
+  plugin: FileGuard refuses both folders, above.
 
 ---
 

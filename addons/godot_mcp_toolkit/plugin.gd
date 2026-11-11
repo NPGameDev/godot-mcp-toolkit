@@ -16,6 +16,7 @@ const AutoloadRegistration := preload("res://addons/godot_mcp_toolkit/core/autol
 const SetupSteps = Modules.SetupSteps
 const SetupStepTracker = Modules.SetupStepTracker
 const UpdateJournal = Modules.UpdateJournal
+const RecoveryFiles = Modules.RecoveryFiles
 const UpdateInstaller = Modules.UpdateInstaller
 const UpdateLifecycle = Modules.UpdateLifecycle
 const UpdatePrompt := preload("res://addons/godot_mcp_toolkit/ui/update/update_prompt.gd")
@@ -221,6 +222,7 @@ func _disable_plugin() -> void:
 		if installer != null:
 			installer.cancel()
 	UpdateJournal.clear()
+	RecoveryFiles.new().remove()
 
 	AutoloadRegistration.unregister(self)
 

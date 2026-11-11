@@ -816,8 +816,9 @@ so a file written there is lost at the next update (ADR 0029).*
   fails it too.
 - **At run time,** the file guards keep MCP tools out of the folder: `FileGuard.is_toolkit_source`
   (`security/file_guard.gd`) matches it under any spelling the filesystem resolves to it, and
-  `resolve_safe` refuses it for reads and writes alike. They refuse the update folder too
-  (`is_update_folder`), which only the self-update writes.
+  `resolve_safe` refuses it for reads and writes alike. They refuse the update folder
+  (`is_update_folder`) and the recovery plugin's folder (`is_recovery_folder`) too, which only
+  the self-update writes.
 
 ---
 
