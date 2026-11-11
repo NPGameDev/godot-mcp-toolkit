@@ -613,9 +613,9 @@ cat <<EOF
 
 Next steps:
   1. Push toolkit: cd "${REPO_ROOT}" && git push origin main ${TAG}
-  2. The tag fires the GATED release workflow — the full behavioral matrix runs
-     first; the GH Release (with the zip attached) only fires if it is green. A red
-     leg blocks the release (by design). Transient failure? Re-dispatch release.yml
+  2. The tag fires the GATED release workflow — the full behavioral matrix and the
+     floor (with the macOS apply-kill rows) run first; the GH Release (with the zip
+     attached) only fires if they are green. A red leg blocks the release (by design). Transient failure? Re-dispatch release.yml
      ON the tag ref with dry-run: false — do not delete/re-push the tag.
 
 Asset submission values (transcribe into the web form; RELEASING.md → Asset distribution):

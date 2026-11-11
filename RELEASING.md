@@ -172,14 +172,17 @@ pin, so pinned configs pick the fix up; a server-internal patch needs no toolkit
 
 Releasing is **not** a naive "tag → publish". Both repos' release workflows
 (`.github/workflows/release.yml`) are **gated on the full cross-version
-behavioral matrix**, and a red matrix leg **blocks the release** — that is the
-design, not a failure of the release script.
+behavioral matrix** (the toolkit also on the whole floor), and a red matrix or
+floor leg **blocks the release** — that is the design, not a failure of the
+release script.
 
 When you push a `v*` tag:
 
 1. `release.yml` calls `cross-version.yml` (via `workflow_call`) as a
    `behavioral` job — the whole two-editor matrix (GDScript + .NET/mono editors,
-   Godot 4.2 through 4.7) runs first, against the pinned sibling.
+   Godot 4.2 through 4.7) runs first, against the pinned sibling. The toolkit's
+   `release.yml` also calls `ci.yml` as a `floor` job, with the macOS apply-kill
+   rows, and waits on it too.
 2. **Server:** the package-shape gate runs — `npm pack` (materializes the exact
    tarball), `publint` (lints the package for publish-time footguns), and
    generated-docs freshness (both `docs:api` **and** `docs:tools`, so a stale
@@ -190,8 +193,8 @@ When you push a `v*` tag:
    and an **update-smoke** installs the zip through the self-update. Then a
    GitHub Release with the zip and the update manifest attached.
 
-The publish / GH-Release / zip steps `needs:` the behavioral job, so they run
-**only** if the matrix is green.
+The publish / GH-Release / zip steps `needs:` the behavioral job and the `floor` job (`ci.yml`
+with the macOS apply-kill rows), so they run **only** if both are green.
 
 **Push with an explicit refspec** — `git push origin main vX.Y.Z`. Do not use
 `git push --follow-tags`: that flag pushes *every* reachable unpushed annotated
@@ -201,7 +204,7 @@ tag, so a stray experimental `v*` tag would ride along and fire the release gate
 
 **Before creating a tag, rehearse the release workflow.** Trigger `release.yml`
 via `workflow_dispatch` with its `dry-run` input left at its default (`true`).
-This runs everything — the called behavioral matrix and the package-shape /
+This runs everything — the called behavioral matrix and the whole floor, and the package-shape /
 zip-build gates — but skips `npm publish` and GH-Release creation. Require it
 green before you cut the tag.
 

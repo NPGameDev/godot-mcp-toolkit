@@ -53,9 +53,9 @@ jobs:
   behavioral:
     uses: ./.github/workflows/cross-version.yml
 
-  # Gate it on the whole floor too (ci.yml), with the apply-kill legs on macOS for every
-  # version, which pull requests run only on 4.7. Its changes job reports code for this
-  # workflow's tag push and dispatch, so no floor job skips here.
+  # The release also waits on the whole floor (ci.yml), with the apply-kill legs on macOS
+  # for every version; pull requests run macOS on 4.7 only. The floor's changes job reports
+  # code for this workflow's tag push and dispatch, so no floor job skips here.
   floor:
     uses: ./.github/workflows/ci.yml
     with:

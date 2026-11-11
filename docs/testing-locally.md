@@ -133,9 +133,9 @@ display (`xvfb-run` on Linux). It runs on Linux, macOS and in Git Bash on Window
 On Linux and macOS the `held` leg makes `addons/` read-only; on Windows it holds
 a toolkit file open with Python 3, which `UT_PYTHON` names when it isn't `python3`
 or `python` on the PATH. In the floor, a push or pull request runs it on Godot 4.2
-through 4.7 on Linux and on 4.7 on macOS. The macOS runs on 4.2 through 4.6 come
-with a dispatch of `ci.yml` with `macos-kill` set, and with every release run of
-`release.yml`, its dry run included.
+through 4.7 on Linux and on 4.7 on macOS. A dispatch of `ci.yml` with `macos-kill`
+set, and every run of `release.yml` (its dry run included), also run it on macOS
+for 4.2 through 4.6.
 
 ```bash
 GODOT_BIN=/path/to/godot xvfb-run -a bash test/apply_kill_driver/run_legs.sh

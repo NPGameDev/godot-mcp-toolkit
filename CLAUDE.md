@@ -369,12 +369,12 @@ quick operational facts only.
   4.7: the self-update end to end on scratch projects, headless, against a local
   server; `scripts/test_framework/update_flow.sh`), the `release-builds` job (the
   bash and PowerShell release builds write the same release;
-  `scripts/test_framework/check_release_builds.sh`), and the `apply-kill` job (4.2 through 4.7
-  on Linux and 4.7 on macOS on a push or PR; macOS on every version with the
-  `macos-kill` input, which a `ci.yml` dispatch sets by hand and `release.yml` sets on its
-  dry run and tag run: the self-update's swap in real editors, killed at each step, plus
-  the recovery plugin's legs and a held toolkit folder;
-  `test/apply_kill_driver/run_legs.sh`). An aggregate
+  `scripts/test_framework/check_release_builds.sh`), and the `apply-kill` job (the
+  self-update's swap in real editors, killed at each step, plus the recovery plugin's legs
+  and a held toolkit folder; `test/apply_kill_driver/run_legs.sh`). A push or PR runs it on
+  4.2 through 4.7 on Linux and on 4.7 on macOS; the `macos-kill` input, which a `ci.yml`
+  dispatch sets by hand and `release.yml` sets on its dry run and tag run, adds macOS on
+  every version. An aggregate
   **`Toolkit floor OK`** gate `needs:` every floor job — it is the only name
   that ever becomes a required check (never an individual matrix row).
 - **Cross-version** (`.github/workflows/cross-version.yml`) — behavioral
