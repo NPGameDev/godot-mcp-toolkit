@@ -49,7 +49,7 @@ never publish by accident.
 
 In the toolkit the rehearsal also runs the whole floor (`ci.yml`), with the apply-kill legs on macOS
 for every Godot version, which pull requests run on 4.7 only. The first such rehearsal took 50
-minutes, its slowest macOS rows about 30, so allow an hour. It must be green before you tag, and the tag run repeats it
+minutes, its slowest macOS row 38, so allow an hour. It must be green before you tag, and the tag run repeats it
 before it publishes.
 
 A rehearsal certifies the **pinned** sibling, not the two HEADs. If every behavioral leg fails
