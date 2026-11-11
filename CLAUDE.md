@@ -370,7 +370,9 @@ quick operational facts only.
   server; `scripts/test_framework/update_flow.sh`), the `release-builds` job (the
   bash and PowerShell release builds write the same release;
   `scripts/test_framework/check_release_builds.sh`), and the `apply-kill` job (4.2 through 4.7
-  on Linux and macOS: the self-update's swap in real editors, killed at each step, plus
+  on Linux and 4.7 on macOS on a push or PR; macOS on every version with the
+  `macos-kill` input, which a `ci.yml` dispatch sets by hand and `release.yml` sets on its
+  dry run and tag run: the self-update's swap in real editors, killed at each step, plus
   the recovery plugin's legs and a held toolkit folder;
   `test/apply_kill_driver/run_legs.sh`). An aggregate
   **`Toolkit floor OK`** gate `needs:` every floor job — it is the only name
@@ -397,8 +399,9 @@ quick operational facts only.
   `test/update_gui_driver/`). The server repo runs the same two-editor matrix
   for its own changes.
 - **Release** (`.github/workflows/release.yml`) — runs on `v*` tag push; GATES
-  on the deep behavioral tier (`behavioral: uses: cross-version.yml` +
-  `needs:`), then validates tag matches `plugin.cfg` version, builds the
+  on the deep behavioral tier (`behavioral: uses: cross-version.yml`) and the
+  whole floor with the macOS apply-kill rows (`floor: uses: ci.yml`,
+  `macos-kill: true`), both in `needs:`, then validates tag matches `plugin.cfg` version, builds the
   plugin zip and its `.update.json` manifest via
   `scripts/build-plugin-release.sh`, install-smokes the zip (unzip into a
   scratch project, headless 4.7.0 boot, assert `[MCPServer] listening`),

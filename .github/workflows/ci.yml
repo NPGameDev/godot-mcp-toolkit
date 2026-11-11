@@ -16,6 +16,26 @@ on:
   # vacuously. The gh-readonly-queue ref does not match the push filter above, so a
   # queued PR would produce ONE floor run, not two.
   merge_group:
+  # The full floor by hand: with macos-kill true it adds the macOS apply-kill rows that
+  # a push or a pull request leaves out (see the apply-kill job).
+  workflow_dispatch:
+    inputs:
+      macos-kill:
+        description: "Also run the apply-kill legs on macOS for Godot 4.2 through 4.6 (a push or PR runs macOS on 4.7 only)."
+        type: boolean
+        required: false
+        default: false
+  # release.yml calls the whole floor with macos-kill true, on its dry-run dispatch and
+  # on the tag run, and publishes only when it passes. A called run sees the caller's
+  # event (workflow_dispatch, or push for a tag), so the changes job reports code and
+  # every job runs.
+  workflow_call:
+    inputs:
+      macos-kill:
+        description: "Also run the apply-kill legs on macOS for Godot 4.2 through 4.6."
+        type: boolean
+        required: false
+        default: false
 
 # Supply-chain baseline: least privilege by default. No floor job
 # writes repo contents; the release path grants its own contents: write per-job.
@@ -30,8 +50,13 @@ permissions:
 # fixup push supersedes only that PR's floor run — and a merge-queue entry, were this
 # repo ever org-owned, would land in a group of its own rather than cancelling the
 # required check out from under the queue.
+# A dispatch and a release's call get a group of their own, keyed on the run: under
+# workflow_call github.workflow is the caller's name, so a group built from it and the
+# ref would match release.yml's own group (groups ignore case) and the floor would
+# cancel or wait on the release run that called it. The fixed "floor-" prefix also
+# keeps it apart from cross-version.yml's group in the same release run.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: floor-${{ (github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')) && github.run_id || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -403,32 +428,37 @@ jobs:
         run: bash ./scripts/test_framework/check_export_strip.sh res://export_strip_probe.gd $MODES
 
   # ── The self-update's swap in real editors ───────────────────────────────────
-  # Kills an editor at each step of the swap and grades the next start, on every
-  # supported minor version on Linux and macOS; run_legs.sh names its legs. It sits in
-  # the floor, not the opt-in deep tier, because no other job runs the swap on a real
-  # folder. On Linux Xvfb serves the editor's OpenGL through Mesa's software renderer;
-  # macOS has a display.
+  # Kills an editor at each step of the swap and grades the next start; run_legs.sh
+  # names its legs. It sits in the floor, not the opt-in deep tier, because no other job
+  # runs the swap on a real folder. A push or a pull request runs it on Linux for every
+  # supported minor version and on macOS for 4.7 only. With the macos-kill input (a
+  # dispatch of this workflow, or release.yml's call before it publishes) macOS runs
+  # every version too. It stays one job so the floor gate below sees no skipped job when
+  # the macOS rows are left out. On Linux Xvfb serves the editor's OpenGL through Mesa's
+  # software renderer; macOS has a display.
   apply-kill:
     needs: changes
     if: ${{ needs.changes.outputs.code == 'true' }}
     runs-on: ${{ matrix.os }}
     # Fuse: 34 editor sessions per row (35 on 4.2), each ended from inside within 240s if it hangs.
-    timeout-minutes: 60
+    # A macOS row has taken 41 minutes, so it gets more room.
+    timeout-minutes: ${{ matrix.os == 'macos-latest' && 90 || 60 }}
+    env:
+      # On macOS Godot 4.5.0 can abort at an editor's start or exit with `Pure virtual
+      # function called!` (an export plugin's device poll thread; fixed in 4.5.1), so
+      # macOS runs 4.5.2 in its place. The job's name repeats this expression.
+      KILL_GODOT_VERSION: ${{ matrix.os == 'macos-latest' && matrix.godot-version == '4.5.0' && '4.5.2' || matrix.godot-version }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: ${{ fromJSON(inputs['macos-kill'] && '["ubuntu-latest", "macos-latest"]' || '["ubuntu-latest"]') }}
         godot-version: ["4.2.0", "4.3.0", "4.4.0", "4.5.0", "4.6.0", "4.7.0"]
-        # On macOS Godot 4.5.0 can abort at an editor's start or exit with `Pure virtual
-        # function called!` (an export plugin's device poll thread; fixed in 4.5.1), so
-        # macOS runs 4.5.2 in its place.
-        exclude:
-          - os: macos-latest
-            godot-version: "4.5.0"
+        # Adds a macOS 4.7 row when the os list above has no macOS; when it has, this
+        # matches that row and adds nothing.
         include:
           - os: macos-latest
-            godot-version: "4.5.2"
-    name: "Apply kill legs (real editor · ${{ matrix.os }} · Godot ${{ matrix.godot-version }})"
+            godot-version: "4.7.0"
+    name: "Apply kill legs (real editor · ${{ matrix.os }} · Godot ${{ matrix.os == 'macos-latest' && matrix.godot-version == '4.5.0' && '4.5.2' || matrix.godot-version }})"
     steps:
       - uses: actions/checkout@v7
 
@@ -436,7 +466,7 @@ jobs:
         # pinned to v2.4.1 — update tag manually after reviewing changelogs
         uses: chickensoft-games/setup-godot@v2.4.1
         with:
-          version: ${{ matrix.godot-version }}
+          version: ${{ env.KILL_GODOT_VERSION }}
           use-dotnet: false
 
       - name: Install a virtual display (Linux)
@@ -453,6 +483,8 @@ jobs:
         shell: bash
         env:
           APPLY_KILL_OUT: ${{ runner.temp }}/apply-kill
+          # macOS sessions have run up to 259 of the default 300 seconds.
+          APPLY_KILL_SESSION_TIMEOUT: ${{ matrix.os == 'macos-latest' && '600' || '300' }}
         run: |
           set -o pipefail
           if [ "$RUNNER_OS" = "Linux" ]; then
@@ -466,7 +498,7 @@ jobs:
         if: ${{ always() }}
         uses: actions/upload-artifact@v5
         with:
-          name: apply-kill-${{ runner.os }}-${{ matrix.godot-version }}
+          name: apply-kill-${{ runner.os }}-${{ env.KILL_GODOT_VERSION }}
           path: ${{ runner.temp }}/apply-kill/logs
           if-no-files-found: warn
           retention-days: 14

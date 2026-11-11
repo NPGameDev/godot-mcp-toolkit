@@ -3,11 +3,12 @@ name: Release
 # Release path — gated on the deep behavioral tier and dry-runnable.
 #
 # Two entry points:
-#   • v* tag push       → real release: the behavioral matrix runs first (via
+#   • v* tag push       → real release: the behavioral matrix and the full floor
+#                         (ci.yml with the macOS apply-kill rows) run first (via
 #                         workflow_call), then the zip is built, install-smoked,
 #                         and uploaded as a GitHub Release.
 #   • workflow_dispatch → DRY-RUN by default: runs EVERYTHING (the called behavioral
-#                         matrix + the zip build + the install-smoke) but skips the
+#                         matrix and floor + the zip build + the install-smoke) but skips the
 #                         GH-Release creation. Makes the whole release path testable
 #                         off a tag, before a real release first fires it. Dispatching
 #                         ON a tag ref with dry-run: false is the manual re-run
@@ -19,14 +20,15 @@ name: Release
 # event_name=='workflow_dispatch' gates. If release.yml ever gains a NEW trigger type
 # (e.g. schedule), the callee's opt-in jobs would all-skip and the behavioral: call
 # would succeed VACUOUSLY, un-gating the release — re-verify the callee gates whenever
-# the release triggers change.
+# the release triggers change. The floor callee has no such gate: its changes job
+# reports code on every event but a pull request.
 on:
   push:
     tags: ["v*"]
   workflow_dispatch:
     inputs:
       dry-run:
-        description: "Run the full gated release path (behavioral matrix + zip build + install-smoke) but skip the GH Release. Default true — a manual dispatch can never accidentally release; real releases fire via tag push (inputs empty)."
+        description: "Run the full gated release path (behavioral matrix + floor + zip build + install-smoke) but skip the GH Release. Default true — a manual dispatch can never accidentally release; real releases fire via tag push (inputs empty)."
         type: boolean
         required: false
         default: true
@@ -51,8 +53,16 @@ jobs:
   behavioral:
     uses: ./.github/workflows/cross-version.yml
 
+  # Gate it on the whole floor too (ci.yml), with the apply-kill legs on macOS for every
+  # version, which pull requests run only on 4.7. Its changes job reports code for this
+  # workflow's tag push and dispatch, so no floor job skips here.
+  floor:
+    uses: ./.github/workflows/ci.yml
+    with:
+      macos-kill: true
+
   build-and-release:
-    needs: behavioral
+    needs: [behavioral, floor]
     runs-on: ubuntu-latest
     # Re-grant write for the GH Release upload.
     permissions:
