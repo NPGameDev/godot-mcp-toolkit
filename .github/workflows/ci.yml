@@ -26,9 +26,9 @@ on:
         required: false
         default: false
   # release.yml calls the whole floor with macos-kill true, on its dry-run dispatch and
-  # on the tag run, and publishes only when it passes. A called run sees the caller's
-  # event (workflow_dispatch, or push for a tag), so the changes job reports code and
-  # every job runs.
+  # on the tag run, and uploads the release files only when it passes. A called run
+  # sees the caller's event (workflow_dispatch, or push for a tag), so the changes job
+  # reports code and every job runs.
   workflow_call:
     inputs:
       macos-kill:
@@ -432,10 +432,10 @@ jobs:
   # names its legs. It sits in the floor, not the opt-in deep tier, because no other job
   # runs the swap on a real folder. A push or a pull request runs it on Linux for every
   # supported minor version and on macOS for 4.7 only. With the macos-kill input (a
-  # dispatch of this workflow, or release.yml's call before it publishes) macOS runs
-  # every version too. It stays one job so the floor gate below sees no skipped job when
-  # the macOS rows are left out. On Linux Xvfb serves the editor's OpenGL through Mesa's
-  # software renderer; macOS has a display.
+  # dispatch of this workflow, or release.yml's call before it uploads the release
+  # files) macOS runs every version too. It stays one job so the floor gate below sees
+  # no skipped job when the macOS rows are left out. On Linux Xvfb serves the editor's
+  # OpenGL through Mesa's software renderer; macOS has a display.
   apply-kill:
     needs: changes
     if: ${{ needs.changes.outputs.code == 'true' }}

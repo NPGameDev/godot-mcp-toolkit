@@ -27,10 +27,10 @@
 #     never fires. It costs nothing to keep and works as written the day the repo moves
 #     to an org — at which point the queue, not the PR, becomes the binding gate.
 #   • [run-cross-version-ci] in the push commit message  (deliberate "run it" — LINUX)
-#   • release.yml CALLS this workflow (workflow_call) on a v* tag / dry-run
-#     dispatch, and its zip job needs: it — the release backstop (never SHIP a
-#     cross-version regression) is now an ENFORCED release gate, not a parallel
-#     best-effort run
+#   • release.yml CALLS this workflow (workflow_call) on a v* tag / release
+#     dispatch, and its build-and-upload job needs: it — the release backstop
+#     (never SHIP a cross-version regression) is an ENFORCED release gate, not a
+#     parallel best-effort run
 #   • workflow_dispatch                                   (manual)
 # A bare push to main carrying no token still skips every test job (only the cheap
 # changes and platform-setup jobs run), and so does a pull request that changes only
@@ -76,7 +76,7 @@ on:
   # release.yml calls this workflow so a release GATES on the full behavioral
   # matrix. Under workflow_call the job `if:` gates below evaluate the CALLER's
   # context — a v* tag push satisfies startsWith(github.ref,'refs/tags/v'); a
-  # dry-run dispatch satisfies event_name=='workflow_dispatch' — so they need no
+  # release dispatch satisfies event_name=='workflow_dispatch' — so they need no
   # change. inputs.sibling-ref resolves empty when called -> the pin fallback holds.
   workflow_call:
   # The binding gate: every PR against main runs the FULL platform matrix, and
@@ -103,7 +103,7 @@ on:
         required: false
         default: ""
       # Debug-probe targeting for the EXPENSIVE non-Linux
-      # matrix. Empty platforms => Linux static legs only (release-dry-run shape). A
+      # matrix. Empty platforms => Linux static legs only (a release run's shape). A
       # single {platform,version,language} triple runs one cheap combo instead of the
       # full non-Linux grid (~$0.80 vs ~$9.60). The FINAL confirm is always the full
       # matrix via the commit tokens — a version-gated fix can regress a neighbour.
@@ -599,7 +599,7 @@ jobs:
           echo "All platform matrix jobs succeeded (or skipped)."
 
   # Anti-vacuous release-gate assertion. platform-matrix-ok above correctly treats
-  # all-skipped as success (the platform legs are opt-in). But on a v* tag / dry-run
+  # all-skipped as success (the platform legs are opt-in). But on a v* tag / release
   # dispatch the two Linux BEHAVIORAL jobs are the gate before the release — an
   # all-SKIP there (e.g. a new trigger type that slips past their if: gates) would
   # sail through platform-matrix-ok vacuously. This job runs ONLY when the behavioral

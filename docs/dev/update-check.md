@@ -92,10 +92,13 @@ the map of `self_update/`.
 - For a manual test against a local server, serve
   `/NPGameDev/godot-mcp-toolkit/releases/download/v<v>/` with the zip, the manifest and its
   signature. A release installs only when a key in the chain signed its manifest, and this
-  repository's `embedded_trust_document.gd` is empty, so the toolkit under test needs a scratch copy
-  whose embedded document lists a test key: `scripts/trust-document.sh` builds and signs one, and
-  `scripts/sign-release.sh` signs the manifest. `ut_embed_trust` in `scripts/lib/update_test_env.sh`
-  shows the steps. Never commit a test key or a test document.
+  repository's `embedded_trust_document.gd` lists only the real release key, so the toolkit under
+  test needs a scratch copy whose embedded document lists a test key instead:
+  `scripts/trust-document.sh` builds and signs one, and `ut_embed_trust` in
+  `scripts/lib/update_test_env.sh` shows the steps. Sign the scratch manifest with openssl, in the
+  form `scripts/sign-release.sh` writes:
+  `openssl dgst -sha256 -sign <test-key.pem> -out <manifest>.sig <manifest>`. That script signs only
+  a tagged release whose draft is on GitHub. Never commit a test key or a test document.
 - A headless editor never installs, settles or applies; `GODOT_MCP_UPDATE_ALLOW_HEADLESS=1` lifts
   that for tests. The install guards also refuse in this repository, so test in a scratch project.
 

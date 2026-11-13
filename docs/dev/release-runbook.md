@@ -11,7 +11,8 @@ the release scripts and the probes live there.
 It orders and links rather than restates. The mechanics live where they already are:
 
 - `RELEASING.md` (both repos): the `release.sh` ritual, the sibling-pin ritual, the dry-run
-  rehearsal, rollback.
+  rehearsal, the toolkit's publish ritual, the fix-forward rollback.
+- `docs/dev/trust-chain.md` (toolkit): the signing keys, their custody, and their rotation.
 - `docs/dev/release-checklist.md` (both repos, different content): the manual gates CI cannot reach.
 - `test/probes/README.md` (server): the drivers that produce the checklist's evidence.
 
@@ -43,14 +44,16 @@ Work through the phases in order. Each one ends in a state the next phase assume
 
 ## Phase 1. Rehearse
 
-Fire each repo's `release.yml` through `workflow_dispatch` with `dry-run: true`. The full gated path
-runs; publish and GH-Release steps skip. The dispatch input defaults to true, so a dispatch can
-never publish by accident.
+Fire each repo's `release.yml` through `workflow_dispatch` from a branch. The full gated path runs,
+and nothing is published. In the server, leave `dry-run` at its default, true, so the publish and
+GH-Release steps skip; a dispatch can never publish by accident. The toolkit's workflow takes no
+input and cannot publish at all: from a branch it skips only the checks that need a tag, and uploads
+the zip and manifest as the artifact `release-untagged-<sha>`.
 
 In the toolkit the rehearsal also runs the whole floor (`ci.yml`), with the apply-kill legs on macOS
 for every Godot version, which pull requests run on 4.7 only. The first such rehearsal took 50
 minutes, its slowest macOS row 38, so allow an hour. It must be green before you tag, and the tag
-run repeats it before it publishes.
+run repeats it before it uploads the artifact.
 
 A rehearsal certifies the **pinned** sibling, not the two HEADs. If every behavioral leg fails
 identically, suspect a stale pin before suspecting the code.
@@ -286,12 +289,38 @@ The toolkit script takes a version, the pin flag, `--dry-run` and the three non-
 `--verify` and `--with-sibling` are server-side. The gated workflow builds the zip and its update
 manifest, install-smokes the zip into a scratch project, checks the booted tree against the zip's
 release file list and the manifest, update-smokes the zip over the same tree one version older with a
-key made for the run, and attaches the zip and the manifest to the GH Release. The workflow does not
-sign the manifest; until a signature by a trusted release key sits beside it, the toolkit offers the
-release as links only (ADR 0029).
+key made for the run, checks the zip against the tagged tree, and uploads the zip and the manifest as
+the artifact `release-v<version>`. It runs read-only: it creates no GitHub Release and signs nothing.
 
 The script prints the asset submission values at tag time (version, download commit SHA, zip name).
 Keep them on screen.
+
+### Publish the toolkit's release
+
+The tag run takes about an hour. Then publish from your machine with `scripts/publish-release.sh`
+(toolkit), whose steps `RELEASING.md` describes. A coding agent may run `check`, `draft` and
+`attach`; you type the sign and `publish`:
+
+```bash
+gh run watch <the tag's release.yml run>
+bash scripts/publish-release.sh check v<version>
+bash scripts/publish-release.sh draft v<version>
+bash scripts/sign-release.sh dist-plugin/release-v<version>/godot-mcp-toolkit-<version>.update.json <private-key.pem>
+bash scripts/publish-release.sh attach v<version>
+gh release edit v<version> --notes-file <merged-changelog.md>
+bash scripts/publish-release.sh publish v<version>
+```
+
+`attach` needs `GODOT_BIN_4_2` and `GODOT_BIN_4_7` set to those two Godot binaries for its reader
+check. The body goes on the draft before `publish`: the merged changelog Phase 7 describes. A
+release that ships a new trust document publishes with `publish trust-<N> v<version>` instead.
+
+`publish` ends by printing the line for `trust/released-manifests.txt`. Add it through a pull request
+from `chore/ledger-<version>`.
+
+A step that refuses names what is missing. Until `publish`, nothing is public: delete the draft and
+start again from `check` if the draft went wrong. After `publish` the release is immutable, and a
+failed check in that step is fixed forward.
 
 Get the full 40-character SHA for the listings, since the forms reject a short SHA:
 
@@ -311,7 +340,7 @@ below:
 | Zip to upload | `https://github.com/NPGameDev/godot-mcp-toolkit/releases/download/v<ver>/godot-mcp-toolkit-<ver>.zip` | the CI-built zip, never a local build |
 | Legacy Asset Library, edit | https://godotengine.org/asset-library/asset/edit/23816 | version + full 40-char Download Commit; re-enters moderation |
 | Legacy Asset Library, public | https://godotengine.org/asset-library/asset/23816 | check the version after moderation |
-| Toolkit GitHub Release | `https://github.com/NPGameDev/godot-mcp-toolkit/releases/tag/v<ver>` | body leads with the merged changelog; zip and update manifest attached |
+| Toolkit GitHub Release | `https://github.com/NPGameDev/godot-mcp-toolkit/releases/tag/v<ver>` | body leads with the merged changelog; zip, update manifest and `.sig` attached |
 | Server GitHub Release | `https://github.com/NPGameDev/godot-mcp-server/releases/tag/v<ver>` | body leads with the server's own CHANGELOG section |
 | npm | `https://www.npmjs.com/package/@npgamedev/godot-mcp-server/v/<ver>` | version, provenance badge, images |
 
@@ -341,9 +370,10 @@ Store media is 16:9 (mandatory), at least 1280x720 and at most 600 KB.
   `./scripts/release.sh --verify <version>` (server, read-only). Exit 0 means both tags and the
   npm version have converged. Exit 1 means a tag is missing or the toolkit repo cannot be found, so
   act on it. Exit 2 means only npm is still catching up, so poll again.
-- Check both GH Release bodies. The workflow auto-generates notes from the commit range rather than
-  the changelog, so paste the merged changelog at the top of the toolkit's body, above the generated
-  notes, and the server's own rolled section at the top of the server's.
+- Check both GH Release bodies. The server's workflow auto-generates notes from the commit range
+  rather than the changelog, so paste the server's own rolled section at the top of its body, above
+  the generated notes. The toolkit's body is the merged changelog put on the draft before `publish`;
+  check that it rendered.
 - If a release turns out bad, do not reuse or move the tag. `RELEASING.md` has the forward-only
   rollback paths for npm, GitHub, and the two listing surfaces.
 - Record anything that surprised you, so the next release does not rediscover it.

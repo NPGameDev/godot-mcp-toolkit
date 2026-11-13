@@ -408,11 +408,17 @@ quick operational facts only.
   checks the booted tree against the zip's release file list and the manifest
   (`scripts/check_release_files.sh`), update-smokes it
   (`UPDATE_FLOW_SKIP_BUILD=1 UPDATE_FLOW_LEGS=full`: the built zip installs over
-  the same tree one version older, signed with a key made for the run), and
-  uploads the zip and the manifest as GitHub Release artifacts. The workflow
-  does not sign the manifest; until a signature by a trusted release key sits
-  beside it, the toolkit offers the release as links only. `workflow_dispatch`
-  runs the whole chain as a **dry-run** (upload skipped).
+  the same tree one version older, signed with a key made for the run), checks
+  the zip against the tagged tree (`scripts/check-release-zip.mjs`), and
+  uploads the zip and the manifest as the workflow artifact `release-<tag>`. It
+  runs with `contents: read` only: it creates no GitHub Release and signs
+  nothing. The maintainer publishes from their own machine with
+  `scripts/publish-release.sh` (`check`, `draft`, the maintainer's
+  `scripts/sign-release.sh`, `attach`, `publish`; `RELEASING.md`). An agent may
+  run `check`, `draft` and `attach`, never the sign or `publish`.
+  `workflow_dispatch` takes no input: from a branch it is the **dry run** (the
+  tag-only checks skipped, artifact `release-untagged-<sha>`), and on the tag
+  ref it is the re-run after a transient failure.
 
 ## Dogfood setup (this repo)
 

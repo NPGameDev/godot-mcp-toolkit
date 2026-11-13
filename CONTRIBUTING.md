@@ -140,18 +140,19 @@ contributor-facing summary.
   override), or automatically as part of a release (below).
 - **Release** (`release.yml`). A **`v*` tag push** first runs the deep behavioral
   matrix and the whole floor, with the apply-kill job on macOS for every version
-  (the zip job `needs:` both — a cross-version regression can never ship),
+  (the `build-and-upload` job `needs:` both — a cross-version regression can never ship),
   then builds the plugin zip and its update manifest, **install-smokes the actual
   artifact** (unzips it into a scratch project and boots a headless editor to prove
   the plugin enables), checks the booted tree against the zip's release file list
   and the manifest (`scripts/check_release_files.sh`), **update-smokes** it (installs
   it through the self-update over the same tree one version older,
-  `UPDATE_FLOW_SKIP_BUILD=1 UPDATE_FLOW_LEGS=full`), and uploads the zip and the
-  manifest as a GitHub Release. The workflow does not sign the manifest; until a
-  signature by a trusted release key sits beside it, the toolkit offers the release
-  as links only. You can rehearse the whole path without
-  releasing by running `release.yml` via **`workflow_dispatch`** — it is a
-  **dry-run** by default (everything runs; the Release upload is skipped).
+  `UPDATE_FLOW_SKIP_BUILD=1 UPDATE_FLOW_LEGS=full`), checks the zip against the
+  tagged tree, and uploads the zip and the manifest as a workflow artifact. The
+  workflow is read-only: it creates no GitHub Release and signs nothing. The
+  maintainer checks, signs and publishes the release from their own machine
+  (`scripts/publish-release.sh`, described in `RELEASING.md`). You can rehearse
+  the whole path by running `release.yml` via **`workflow_dispatch`** from a
+  branch — the **dry run** (everything runs but the checks that need a tag).
 
 The behavioral tier is **mirrored in both repos** (toolkit and server): each side
 runs the full two-editor matrix against a pinned SHA of the other, so a run in
