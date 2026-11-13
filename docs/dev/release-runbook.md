@@ -326,9 +326,11 @@ documents with the zip, and they go public with the release.
 `publish` ends by printing the line for `trust/released-manifests.txt`. Add it through a pull request
 from `chore/ledger-<version>`.
 
-A step that refuses names what is missing. Until `publish`, nothing is public: delete the draft and
-start again from `check` if the draft went wrong. After `publish` the release is immutable, and a
-failed check in that step is fixed forward.
+A step that refuses names what is missing. Until `publish`, nothing is public: if the draft went
+wrong, delete it, remove the folder `draft` left under `/Users/Shared` (a second `draft` refuses
+while it is there), and start again from `check`. `attach` and `publish` refuse a draft marked a
+pre-release. After `publish` the release is immutable, and a failed check in that step is fixed
+forward.
 
 Get the full 40-character SHA for the listings, since the forms reject a short SHA:
 

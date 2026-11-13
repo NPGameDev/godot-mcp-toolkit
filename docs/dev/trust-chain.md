@@ -409,7 +409,9 @@ rotating past a document with a new field, teach the script that field, or the n
   the next document, so a release that lacks one stops every client behind it there.
 - **Whoever can publish releases can hide a revocation by leaving it out.** A release published without
   the revoking document, or an older release kept as the latest, leaves clients on the keys they hold.
-  `publish-release.sh` refuses to publish such a release, but someone with the repository's publish
+  `publish-release.sh` refuses a release that lacks a document its tag holds, or that drops or changes
+  one the latest release carries, and a version that is not above the latest. It cannot refuse a release
+  that stays the latest because nothing newer is published, and someone with the repository's publish
   rights need not use it.
 - **The signing script comes from `main`.** `sign-release.sh` runs from a clone of `main` and reads
   the passphrase, so a malicious change merged there could take the key. Review of what lands on

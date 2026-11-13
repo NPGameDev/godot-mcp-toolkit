@@ -220,8 +220,10 @@ tag, so a stray experimental `v*` tag would ride along and fire the release gate
 The toolkit's release is published from the maintainer's machine by
 `scripts/publish-release.sh`, one step per call, with the maintainer's
 `scripts/sign-release.sh` between two of them. Each `publish-release.sh` step
-refuses unless the one before it is done, and keeps its record in
-`dist-plugin/release-<tag>/` beside the files it checked. The sign reads no
+refuses unless the one before it is done. `check` and `attach` each leave a
+record in `dist-plugin/release-<tag>/`, beside the files `check` passed. The
+records only keep the steps in order: `publish` checks again what it reads
+itself from the tag, from `origin` and from the draft's bytes. The sign reads no
 record: it checks the clone, the tag and the zip itself. The steps marked *agent* may be run by a coding
 agent helping with the release; the other two are typed by the maintainer.
 Every step first refuses when a variable that would aim `git`, `gh`, `node` or
@@ -234,14 +236,20 @@ Every step first refuses when a variable that would aim `git`, `gh`, `node` or
    does not wait, so watch the run first (`gh run watch`). It downloads the
    run's artifact `release-vX.Y.Z`, checks the zip against the tag
    (`scripts/check-release-zip.mjs`, the run that decides), and compares the
-   manifest with the one this machine writes for that zip.
+   manifest with the one this machine writes for that zip. It also refuses
+   when the repository has a branch named like the tag, when a release for the
+   tag is already on GitHub, and when the artifact holds anything but the zip
+   and the manifest.
 2. `scripts/publish-release.sh draft vX.Y.Z` (*agent*) creates the draft
    release with the checked zip and manifest, `--verify-tag`, and an empty body.
    When the tag holds trust documents after the first, it uploads those too,
    `trust-2.json` through `trust-N.json`, read from the tag. It copies the zip
    into a new folder, `publish-release-vX.Y.Z.<random>` under `/Users/Shared`
    (`PUBLISH_RELEASE_HANDOFF_ROOT` names another parent), and prints the sign
-   command. A draft is invisible to the public.
+   command. It refuses when a release for the tag is already on GitHub, and
+   while a folder that an earlier draft of the tag left there, owned by the
+   same account, remains: remove it first, so the signing account finds one zip
+   for the tag. A draft is invisible to the public.
 3. The sign (*maintainer*), typed in a separate admin account that holds the
    release key and runs no coding agent, from a fresh anonymous clone of
    `main`:
@@ -279,29 +287,44 @@ Every step first refuses when a variable that would aim `git`, `gh`, `node` or
    own with no write for group or others, or root's or that account's with
    the sticky bit set). The last line printed is `OUT <folder>`.
 4. `scripts/publish-release.sh attach vX.Y.Z [<folder>]` (*agent*) takes the
-   manifest and the `.sig` from the sign's folder; with no folder named it
-   takes the one `sign-release-vX.Y.Z.*` folder, and refuses on none or
-   several. The manifest must be byte-equal to the one `check` passed, and
-   `scripts/sign-release.sh --verify` must accept the `.sig`. It compares the
-   draft's trust documents with the tag's and with the ones the current latest
-   release carries, and only then uploads the `.sig`. It downloads the assets
-   back and runs the reader check: the toolkit inside the draft's zip, headless
-   on Godot 4.2 and 4.7, must accept each of the draft's documents in order,
-   starting from the tag's `trust-1.json` and an empty store, and then trust
-   the draft's manifest and signature (`GODOT_BIN_4_2` and `GODOT_BIN_4_7` name
-   the binaries). Put the release body on the draft before the next step.
+   manifest and the `.sig` from the sign's folder, and neither file may be a
+   symlink. With no folder named it looks under `/Users/Shared`, or under
+   `SIGN_RELEASE_OUT_ROOT` when that is set, for the one folder named
+   `sign-release-vX.Y.Z.<letters and digits>` that is not a symlink, and
+   refuses on none or several. The manifest must be byte-equal to the one
+   `check` passed, and `scripts/sign-release.sh --verify` must accept the
+   `.sig`. It refuses a draft marked a pre-release, a draft whose assets are
+   not the checked zip and manifest and the tag's trust documents, byte for
+   byte, with at most the `.sig` beside them, and a draft that drops or changes
+   a trust document the current latest release carries. Only then does it
+   upload the `.sig`. It downloads the assets back and runs the reader check
+   with the toolkit inside the draft's zip, headless on Godot 4.2 and 4.7. As a
+   fresh install, that toolkit must trust the draft's manifest and signature
+   and refuse the same signature over a changed manifest. Starting from the
+   tag's `trust-1.json` and an empty store, it must then accept each of the
+   draft's documents in order and trust the manifest and signature again
+   (`GODOT_BIN_4_2` and `GODOT_BIN_4_7` name the binaries). Put the release
+   body on the draft before the next step.
 5. `scripts/publish-release.sh publish vX.Y.Z` (*maintainer*), typed in the
    account that made the draft, runs the sign's first six checks again and
    refuses unless `attach` passed for this draft. Then, before anything is
-   public, it requires exactly one draft with the expected assets, downloads
-   every asset back, and checks the zip against the tag, the manifest against
-   the one it writes itself, the `.sig` with `--verify`, each trust document
-   against the tag's and against the current latest release's, that the
-   repository has immutable releases on, and that the current latest release
-   is a lower version. Only then does it publish the draft as the latest
-   release and check it: `gh release verify` and `gh release verify-asset` on
-   each asset, `immutable: true` on the release, and an anonymous
-   `releases/latest` that returns `vX.Y.Z`.
+   public, it requires that one release carries the tag, a draft not marked a
+   pre-release, with exactly the expected assets. It downloads every asset
+   back and checks the zip against the tag, the manifest against the one it
+   writes itself, the `.sig` with `--verify`, each trust document against the
+   tag's, that the draft drops or changes no trust document the current latest
+   release carries, that the repository has immutable releases on, and that
+   the current latest release is a lower version; a repository with no
+   published release is refused. It then reads the draft and its asset names
+   once more, and refuses when either changed while it was checking. Only then
+   does it publish the draft as the latest release and check it:
+   `gh release verify` and `gh release verify-asset` on each asset, the asset
+   names again, `immutable: true` on the release, and an anonymous
+   `releases/latest` that returns `vX.Y.Z`. GitHub has no call that checks a
+   draft and publishes it as one step, so an asset added after that last read
+   is found only by the checks after the publish, on a release that can no
+   longer change. Run again on a release it has already published, `publish`
+   publishes nothing and repeats the checks.
 
 A release whose tag holds a new trust document takes the same five steps: the
 document is one of the release's assets, so it goes public with the release.
