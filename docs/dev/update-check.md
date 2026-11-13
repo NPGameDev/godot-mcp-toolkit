@@ -55,7 +55,8 @@ the map of `self_update/`.
   `self_update/install_guards.gd` (the toolkit's own repository, a linked addon folder, a git
   checkout of it, a headless editor).
 - The check: `self_update/release_verifier.gd` walks the trust chain first, fetching the trust
-  documents this machine lacks into `<data folder>/godot_mcp_toolkit/trust/`
+  documents this machine lacks from the release it is verifying, as
+  `releases/download/v<v>/trust-<N>.json`, into `<data folder>/godot_mcp_toolkit/trust/`
   (`self_update/trust_chain.gd`), then fetches `godot-mcp-toolkit-<v>.update.json` and its `.sig`
   and checks them (`self_update/release_signature.gd`, `self_update/release_manifest.gd`). A release
   that needs a newer Godot stops there. The verified manifest and signature are kept in the update
@@ -91,14 +92,16 @@ the map of `self_update/`.
   `ui/update/update_prompt.gd` is the ask mode's editor-start window.
 - For a manual test against a local server, serve
   `/NPGameDev/godot-mcp-toolkit/releases/download/v<v>/` with the zip, the manifest and its
-  signature. A release installs only when a key in the chain signed its manifest, and this
+  signature, and with any trust document after the embedded one as `trust-<N>.json` in that same
+  folder. A release installs only when a key in the chain signed its manifest, and this
   repository's `embedded_trust_document.gd` lists only the real release key, so the toolkit under
   test needs a scratch copy whose embedded document lists a test key instead:
   `scripts/trust-document.sh` builds and signs one, and `ut_embed_trust` in
   `scripts/lib/update_test_env.sh` shows the steps. Sign the scratch manifest with openssl, in the
   form `scripts/sign-release.sh` writes:
   `openssl dgst -sha256 -sign <test-key.pem> -out <manifest>.sig <manifest>`. That script signs only
-  a tagged release whose draft is on GitHub. Never commit a test key or a test document.
+  a release tag on this repository's `main`, from a fresh clone of it. Never commit a test key or a
+  test document.
 - A headless editor never installs, settles or applies; `GODOT_MCP_UPDATE_ALLOW_HEADLESS=1` lifts
   that for tests. The install guards also refuse in this repository, so test in a scratch project.
 

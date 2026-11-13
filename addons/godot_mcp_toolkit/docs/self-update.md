@@ -14,8 +14,9 @@ When the toolkit may install updates (see [Consent](#consent)) and the check fin
 newer version it could install, the toolkit downloads only what it needs to check
 that release, before you click anything:
 
-1. Any trust document this machine doesn't have yet. It asks for the next one by
-   number until GitHub has none, so this is one request when nothing changed.
+1. Any trust document this machine doesn't have yet. It asks the new version's
+   release for the next one by number until that release has none, so this is one
+   request when nothing changed.
 2. The release's update manifest, `godot-mcp-toolkit-<version>.update.json`.
 3. The manifest's signature, `godot-mcp-toolkit-<version>.update.json.sig`.
 
@@ -28,8 +29,9 @@ waits to install.
 The release zip, `godot-mcp-toolkit-<version>.zip`, downloads only after you click
 **Update**. That click first asks again for a newer trust document.
 
-Every file comes from the toolkit's GitHub releases. The URLs are built from the
-version number or the trust document's number, never taken from a reply. A
+Every file comes from the new version's release on the toolkit's GitHub page, the
+trust documents included. The URLs are built from the version number and, for a
+trust document, its number, never taken from a reply. A
 download may follow a redirect only to `github.com` or to a host under
 `githubusercontent.com` other than `raw.githubusercontent.com`, where anyone can
 publish a file.

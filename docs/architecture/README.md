@@ -821,7 +821,8 @@ flowchart TD
   signature, not the host. A release counts only when its update manifest is signed by a release
   key the latest trust document lists (`self_update/release_signature.gd`). The chain starts at
   the document the installed release embeds (`self_update/embedded_trust_document.gd`); each next
-  document must be signed by enough of the previous one's root keys, and the ones accepted are
+  document is an asset of the release being verified, fetched from it
+  (`self_update/release_verifier.gd`), and must be signed by enough of the previous one's root keys, and the ones accepted are
   stored per machine in the OS's data folder, outside the project, and verified again from the
   embedded one on every load (`self_update/trust_chain.gd`; the procedures are in
   [`docs/dev/trust-chain.md`](../dev/trust-chain.md)). The manifest pins the zip by size and
@@ -829,7 +830,7 @@ flowchart TD
   file list inside the zip, `release_files.sha256`, says what the stage must hold
   (`self_update/release_file_list.gd`), and `self_update/release_archive.gd` refuses a zip with an
   entry outside the addon folder or a file the list does not name. Every URL is built from the
-  version or the document's number alone (`self_update/release_assets.gd`), and
+  version, and a trust document's from its number too, never from a reply (`self_update/release_assets.gd`), and
   `self_update/update_downloader.gd` follows each redirect by hand, over HTTPS, only to
   `github.com` or a `githubusercontent.com` host other than `raw.githubusercontent.com`, at most
   five hops; that narrows where a request goes, while the signature and hash decide what is used.
@@ -883,14 +884,19 @@ The two repos ship through **different channels** so users never fetch what they
   format `sha256sum -c` checks), and the release publishes the **update manifest**,
   `godot-mcp-toolkit-<version>.update.json`, beside it: the manifest pins the zip by size and
   SHA-256 and names the oldest Godot it runs on. Both build scripts write the two
-  (`scripts/lib/release_files.sh` for the bash one), but only the bash build's manifest, the one
-  `.github/workflows/release.yml` builds, is ever signed. The workflow checks the booted tree
+  (`scripts/lib/release_files.sh` for the bash one), but neither build's manifest is ever
+  signed: `scripts/sign-release.sh` writes the release's manifest itself, from the zip and the
+  tag. The workflow checks the booted tree
   against the list and the manifest against the zip (`scripts/check_release_files.sh`) and the zip
   against the tagged tree (`scripts/check-release-zip.mjs`), then uploads the zip and the manifest
   as a workflow artifact; it runs read-only and creates no release. On the maintainer's machine,
-  `scripts/publish-release.sh` checks the artifact again, drafts the GitHub Release with both,
-  attaches the signature `godot-mcp-toolkit-<version>.update.json.sig` that
-  `scripts/sign-release.sh` writes, and publishes. The self-update reads all three ([§10](#10-security--trust-boundaries)).
+  `scripts/publish-release.sh` checks the artifact again and drafts the GitHub Release with both
+  and with the tag's trust documents after the first. The maintainer signs in a separate admin
+  account that runs no coding agent, from a fresh clone of `main`: `scripts/sign-release.sh`
+  checks the clone, the tag and the zip, writes the manifest again itself and signs only that.
+  `publish-release.sh` then attaches the signature `godot-mcp-toolkit-<version>.update.json.sig`
+  and, after checking every asset again, publishes. The self-update reads the zip, the manifest, the
+  signature and the trust documents ([§10](#10-security--trust-boundaries)).
   `plugin.cfg` declares the version and the `plugin.gd` entry point;
   `icon.png` at the repo root is the Asset Library listing icon, and the repo-root `icon.svg` is the
   dogfood project's own icon (`project.godot` `config/icon`). The addon carries a separate

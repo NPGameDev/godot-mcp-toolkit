@@ -135,4 +135,4 @@ $Manifest = '{"format": 1, "version": "' + $Version + '", "archive": "' + $ZipNa
 [System.IO.File]::WriteAllText((Join-Path $OutDir $ManifestName), $Manifest, $Utf8NoBom)
 
 Write-Host "Built dist-plugin\$ZipName"
-Write-Host "Built dist-plugin\$ManifestName (local tests only; sign the manifest the release workflow builds)"
+Write-Host "Built dist-plugin\$ManifestName (local tests only; scripts/sign-release.sh writes and signs a release's own)"

@@ -149,8 +149,10 @@ contributor-facing summary.
   `UPDATE_FLOW_SKIP_BUILD=1 UPDATE_FLOW_LEGS=full`), checks the zip against the
   tagged tree, and uploads the zip and the manifest as a workflow artifact. The
   workflow is read-only: it creates no GitHub Release and signs nothing. The
-  maintainer checks, signs and publishes the release from their own machine
-  (`scripts/publish-release.sh`, described in `RELEASING.md`). You can rehearse
+  maintainer checks and publishes the release from their own machine
+  (`scripts/publish-release.sh`) and signs it in a separate admin account that
+  runs no coding agent (`scripts/sign-release.sh`); `RELEASING.md` describes
+  both. You can rehearse
   the whole path by running `release.yml` via **`workflow_dispatch`** from a
   branch — the **dry run** (everything runs but the checks that need a tag).
 

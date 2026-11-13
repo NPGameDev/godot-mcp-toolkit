@@ -411,8 +411,9 @@ _Avoid_: inventory, per-file manifest.
 **Trust document**
 A numbered, signed `trust-N.json` naming the current **root keys**, how many of them must sign the next
 document, and the current **release keys** (`self_update/trust_chain.gd`). Each release embeds one
-(`self_update/embedded_trust_document.gd`); later ones are hosted beside the releases, and each machine
-keeps the ones it fetched in `<data folder>/godot_mcp_toolkit/trust/`. Each later document is signed by
+(`self_update/embedded_trust_document.gd`); later ones ride each release as assets, a machine fetches
+the ones it lacks from the release it is verifying (`self_update/release_assets.gd`), and it keeps them
+in `<data folder>/godot_mcp_toolkit/trust/`. Each later document is signed by
 a threshold of the roots before it and a threshold of its own.
 _Avoid_: key list, keyring.
 

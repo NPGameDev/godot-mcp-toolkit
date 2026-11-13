@@ -17,7 +17,7 @@ The reader is `addons/godot_mcp_toolkit/self_update/trust_chain.gd`. The tool is
 | No release can be trusted right now and no replacement is ready | [The emergency stop](#the-emergency-stop) |
 | A release key's private half is lost | [Rotating a release key](#rotating-a-release-key), with no hurry |
 | Every root key leaked or is lost | [The limits](#the-limits) |
-| `releases/latest` returns a `trust-N` tag | [Publishing a document on its own](#publishing-a-document-on-its-own), its last line |
+| A published release lacks a trust document its tag holds | [Hosting](#hosting), its second point |
 
 ## How it works
 
@@ -73,7 +73,9 @@ file and hands its bytes to `accept()`. Checking a signature only reads files, s
 verify at the editor's exit, offline, from what the store holds.
 
 The installer runs that fetch just before it verifies a newer release and on each click on Update.
-An up-to-date client makes one request, for the document after its latest, and the 404 ends the walk.
+It asks the release it is about to verify, at `releases/download/v<version>/trust-N.json`, beside that
+release's manifest and signature. A client that already holds that release's latest document makes one
+request, for the document after it, and the 404 ends the walk.
 An embedded document that reads as empty means no walk, and a release an earlier session kept is
 offered at a start without a request. No walk runs while an update is staged.
 A 404 ends the chain. A timeout, a 5xx, a TLS failure, an off-list redirect or an invalid document
@@ -107,7 +109,9 @@ one document adds the new roots, and a later one, signed by a new root, drops th
 maintainer's project-neutral playbook, *Signed-update key rotation*, holds the pattern. It is kept
 outside this repository.
 
-`scripts/publish-release.sh` runs the GitHub side of steps 2 and 3 and checks each result itself.
+A document reaches clients only as an asset of a release, so a rotation is an ordinary release whose
+tag holds the new document. `scripts/publish-release.sh` runs the GitHub side of steps 2 and 3 and
+checks each result itself.
 
 ### 1. Build and sign the document, then land it
 
@@ -152,40 +156,39 @@ before it, each `trust-N.json` carrying version N, and the constant held to its 
 ### 2. Release X.Y.Z, signed by the new key
 
 From the merged `main`, tag `vX.Y.Z` so that it embeds `trust-8`, and run the release as
-`RELEASING.md` describes, up to and including `attach`: `check`, `draft`, the sign, `attach`. The
-sign uses the new key, on the manifest `check` downloaded from the tag's run, never a local build:
+`RELEASING.md` describes, up to and including `attach`: `check`, `draft`, the sign, `attach`. `draft`
+uploads `trust-2.json` through `trust-8.json` from the tag beside the zip and the manifest, and hands
+the zip over for the sign. The sign uses the new key, in the account the maintainer signs releases
+from (see [Custody](#custody)), from a fresh anonymous clone of `main`:
 
 ```sh
-scripts/sign-release.sh dist-plugin/release-vX.Y.Z/godot-mcp-toolkit-X.Y.Z.update.json <keys>/new-release.pem
+scripts/sign-release.sh vX.Y.Z <the zip draft handed over> <keys>/new-release.pem
 ```
 
-`sign-release.sh` signs only when the manifest's SHA-256 matches the digest GitHub reports for the
-draft's copy, and keeps the `.sig` only when a release key of the newest trust document at the tag,
-here `trust-8`, verifies it. It asks once for the passphrase, or reads it from a pipe on stdin. Stop
-before `publish`.
+`sign-release.sh` reads no manifest it is handed. It verifies the tag's documents from the pinned
+`trust-1` up to `trust-8`, checks the zip against the tag, writes the manifest itself and signs only
+that; `RELEASING.md` lists every check. It keeps the `.sig` only when a release key of the highest
+trust document at the tag, here `trust-8`, verifies it. It asks once for the passphrase. Stop before
+`publish`.
 
-### 3. Publish the document and the release together
+### 3. Publish the release, with its documents
 
 ```sh
-scripts/publish-release.sh publish trust-8 vX.Y.Z
+scripts/publish-release.sh publish vX.Y.Z
 ```
 
-One run publishes `trust-8` and then the release, so the gap between them is seconds. For the
-document it uploads `trust/trust-8.json` from the tag as a draft prerelease that is never the
-latest, downloads it back and compares it with the committed bytes, since CI read those and not the
-uploaded ones. Then it publishes the document and waits until an anonymous reader's latest release is
-still a `v` tag: a `trust-N` that became latest stops the update check, which cannot read that tag
-as a version. A run that stopped after the document can run again, since it finds `trust-8` already
-out with the same bytes. Then it publishes the release and checks it, as `RELEASING.md` lists.
+One command publishes the release, and the documents go public with it, since they are its assets:
+no client can see `vX.Y.Z` without `trust-8` beside it. Before it publishes, the script downloads
+every asset back. Each document must be byte-equal to the tag's `trust/trust-K.json`, since CI read
+the committed bytes and not the uploaded ones, and every document the current latest release carries
+must be byte-equal in this one. Then it publishes the release and checks it, as `RELEASING.md` lists.
 
-`publish vX.Y.Z` without the document refuses while the tag embeds a `trust-N` that is not out, and
-the document must be the highest one the tag commits.
+No `trust-N` tag or release exists, and none should ever be made: a client asks only the release it is
+verifying.
 
-Only `release.yml` fires on tags, on `v*`, so the `trust-8` tag starts no release workflow.
-
-Never edit a document after it is published. Its content verifies itself, so this is a rule and does
-not depend on a repository setting. With immutable releases on, a tag name can never be used again, so
-a bad `trust-8` stays bad for good.
+Never change a document once a release has carried it. Its content verifies itself, so this is a rule
+and does not depend on a repository setting. With immutable releases on, a published release's assets
+can never be replaced, so a bad `trust-8` in a published release stays there for good.
 
 ### 4. Drop the old key, with the next release
 
@@ -195,9 +198,9 @@ scripts/trust-document.sh sign trust/trust-9.json <keys>/root-1.pem
 scripts/trust-document.sh verify trust/trust-8.json trust/trust-9.json
 ```
 
-Land `trust-9` as in step 1, release the next version as in step 2, signed by the new key, and
-publish both with `scripts/publish-release.sh publish trust-9 v<next>`. From then on only the new key
-is trusted.
+Land `trust-9` as in step 1, then release the next version as in steps 2 and 3, signed by the new
+key. That release carries `trust-2.json` through `trust-9.json`. From then on only the new key is
+trusted.
 
 ### What clients see when a document drops a key
 
@@ -214,9 +217,10 @@ is trusted.
   security-check message shows neither the GitHub button nor the store button: the first would open
   the release just refused, and the store's copy is a separate artifact this chain does not check,
   so the badge offers no unverified copy of the release.
-- A client behind on a latest release that the dropped key signed refuses that release from the
-  moment it holds the dropping document until the release published with it is out, which
-  `publish-release.sh` keeps to seconds. That gap fails safe.
+- A client takes the dropping document only from a release that carries it, so in the ordinary ritual it
+  does not hold that document while the latest release is still one the dropped key signed. A client whose update check
+  last saw an older release walks that release's documents, and can still install a genuine release
+  the dropped key signed until its next check.
 - A machine that installs the release by hand starts from the document it embeds, so it never
   trusts the dropped key, even with an empty store.
 
@@ -243,13 +247,14 @@ scripts/trust-document.sh verify trust/trust-7.json trust/trust-8.json
 
 The previous document's roots must vouch for this one, so with a threshold of 1 and one root, the
 leaked key itself has to sign. With more roots, sign with the ones that did not leak wherever the
-thresholds allow it. Then continue with the constant and the pull request, and publish the document
-on its own at once ([Publishing a document on its own](#publishing-a-document-on-its-own)), or with
-the next release if one is due within hours ([step 3](#3-publish-the-document-and-the-release-together)).
-Publish an advisory. Treat it as urgent: see the threshold line in [the limits](#the-limits).
+thresholds allow it. Then continue with the constant and the pull request, and ship the document in a
+patch release at once, through the ordinary ritual
+([steps 2 and 3](#2-release-xyz-signed-by-the-new-key)): a document goes out only as an asset of a
+release, and the tag's run takes about an hour. Publish an advisory. Treat it as urgent: see the
+threshold line in [the limits](#the-limits).
 
 With no leak, replace a root by the overlap: one document adds the new root, and a later one drops
-the old, each published with a release. The same commands do it, and `--threshold T` sets the
+the old, each carried by a release. The same commands do it, and `--threshold T` sets the
 threshold.
 
 ## The emergency stop
@@ -262,44 +267,46 @@ scripts/trust-document.sh build trust/trust-7.json --drop-release old-release.pu
 ```
 
 Pass `--drop-release` once per listed key. `build` warns that the document stops all updates, and
-`verify` says so too. Sign and land it as in step 1, then publish it on its own
-([Publishing a document on its own](#publishing-a-document-on-its-own)): no release can go with it,
-since no key it lists could sign one. It reaches only the clients that fetch it, and it undoes nothing
-already installed. To lift it, run the rotation with `--add-release` alone, since there is no key left
-to drop.
+`verify` says so too. Sign and land it as in step 1, then ship it as
+[the stop release](#the-stop-release): a patch release whose tag embeds it, with no signature, since
+no key it lists could sign one. Every client that may install updates takes the stop document from
+that release when it checks it; a client that installs nothing from the editor fetches no document,
+and needs none. It undoes nothing already installed. To lift it, run the rotation with
+`--add-release` alone, since there is no key left to drop.
 
-## Publishing a document on its own
+### The stop release
 
-`scripts/publish-release.sh` publishes a document only together with a release. The emergency stop,
-and a root change that cannot wait for a release, go out by hand. Upload the committed bytes from the
-merged `main`, compare them, then publish:
+The stop release is a patch release, `vX.Y.Z`, whose tag embeds the stop document. It carries the zip,
+the manifest and `trust-2.json` through the stop document, and no `.sig`. A client verifying it walks
+through the stop document, finds no release key in the latest one, and refuses before it asks for
+the manifest or its signature.
 
-```sh
-gh release create trust-8 --draft --prerelease --latest=false --title trust-8 --notes "Trust document 8." trust/trust-8.json
-gh release download trust-8 --pattern trust-8.json --dir <an-empty-folder>
-openssl dgst -sha256 trust/trust-8.json <an-empty-folder>/trust-8.json
-gh release edit trust-8 --draft=false --prerelease --latest=false
-gh api repos/NPGameDev/godot-mcp-toolkit/releases/latest --jq .tag_name
-```
+`scripts/publish-release.sh` publishes no release without a signature, so the last step is by hand:
 
-**These commands were read from GitHub's documentation and have not yet been run against a real
-release here.** Check each result as below, and stop at the first surprise.
+1. Tag `vX.Y.Z` from the merged `main` and let the tag's run finish, as for any release.
+2. `scripts/publish-release.sh check vX.Y.Z`, then `draft vX.Y.Z`, which uploads the documents too.
+3. Skip the sign and `attach`. Download the draft's assets into an empty folder and compare each
+   document with the tag's, since CI read the committed bytes and not the uploaded ones:
+   `git show vX.Y.Z:trust/trust-K.json | cmp - <an-empty-folder>/trust-K.json`.
+4. The maintainer publishes the draft: `gh release edit vX.Y.Z --draft=false --latest`.
 
-- The two hashes must match, since CI read the committed bytes and not the uploaded ones. If they
-  differ, `gh release delete trust-8 --yes` while it is still a draft and upload again.
-- The last command must print a `v` tag. A `trust-N` that became latest stops the update check, which
-  cannot read that tag as a version. To repair it, run `gh release edit v<the last version> --latest`
-  and run the check again.
-
-A release whose tag embeds a document published this way then goes out with
-`scripts/publish-release.sh publish vX.Y.Z` alone, which checks that the document is out.
+**This path has not yet been run against a real release here.** Check each result, and stop at the
+first surprise: once published, the release cannot be withdrawn.
 
 ## Hosting
 
-- Every `trust-N` from 2 up stays hosted as `trust-N/trust-N.json` under this repository's releases, and
-  is never deleted. A fresh install of an old release years later walks from its own embedded document
-  through every one after it. `trust-1` is committed and never hosted, since the first number a client
-  can ask for is 2.
+- Every release carries the whole chain after the first document. A release whose tag's highest
+  document is N publishes `trust-2.json` through `trust-N.json` as assets beside its zip, each
+  byte-equal to the tag's `trust/trust-K.json`. A release whose tag holds `trust-1` alone, as 1.2.0's
+  does, publishes none. The documents stay outside the zip and the manifest: a client learns the
+  manifest's key from them, and fetches the zip only after the manifest verifies. `trust-1` is committed
+  and never hosted, since the first number a client can ask for is 2.
+- A client asks only the release it is verifying, so every later release must carry every document, for
+  good. A fresh install of an old release years later walks from its own embedded document through
+  every one after it, all read from the latest release. A release published without one of them ends
+  the walk there for every client that lacks that document, and such a client refuses the release if a
+  key it has not yet learned signed it. Nothing can be added to a published release; the next release,
+  carrying the whole chain, recovers those clients.
 - `trust/` at the repo root is the source, and it never ships. `trust/*.json` is pinned to LF, so a
   checkout cannot change the bytes publishing uploads.
 - `trust/released-manifests.txt` holds one line per published release, its version and its manifest's
@@ -309,15 +316,15 @@ A release whose tag embeds a document published this way then goes out with
 ## Custody
 
 Real private keys stay out of this repository and out of every workflow. The tools read a private key
-from a PEM file you name. `trust-document.sh` uses no network; `sign-release.sh` reads the draft
-release's digest through `gh` before it signs.
+from a PEM file you name. `trust-document.sh` uses no network. `sign-release.sh` uses none but
+`git ls-remote origin`, which it asks for the tip of `main` and for the tag; it never calls `gh`.
 
 `trust-1` lists two root keys, with a `root_threshold` of 1, and one release key, and both roots
 signed it. Two roots buy availability: losing one costs nothing.
 
 | Key | Kind | Private half | Its passphrase | Copies off its machine |
 |---|---|---|---|---|
-| Release key | RSA-2048 | An encrypted PEM on the maintainer's signing machines | Its own entry in the maintainer's password manager | One, the encrypted PEM in that password manager |
+| Release key | RSA-2048 | An encrypted PEM on the maintainer's machines; releases are signed from an account that runs no coding agent | Its own entry in the maintainer's password manager | One, the encrypted PEM in that password manager |
 | Root 1 | RSA-4096 | An encrypted PEM on one machine only | Its own entry in the password manager | None |
 | Root 2 | RSA-4096 | An encrypted PEM on a second machine only | Its own entry in the password manager | None |
 
@@ -338,6 +345,13 @@ signed it. Two roots buy availability: losing one costs nothing.
   `sign-release.sh --verify`, `trust-document.sh build`, `show`, `verify` and `release-keys`), and
   reads only public files. A guard on the maintainer's machines refuses an agent's command that
   names the keys folder, a private PEM, or a signing or publishing entry point.
+- **Releases are signed in a separate admin account that runs no coding agent.** It holds the
+  release key and has git, bash, openssl and node, with no GitHub login and no Godot. The maintainer
+  signs there from that account's own login session, never through `su` or `sudo` from a terminal of
+  the account agents work in, and from a fresh anonymous clone of `main`. On the machine releases
+  are signed on, the account agents work in holds no key file. Only public bytes cross between the two, through a folder both
+  can reach: the draft's zip one way, the manifest and its `.sig` the other. The maintainer types
+  `publish` in the account that made the draft.
 - Private halves are named `root-1.pem`, `root-2.pem` and `release.pem`, and public halves end in
   `.pub.pem`, so the guard can tell them apart.
 
@@ -366,10 +380,10 @@ Where a client downloads from is fixed the same way, compiled into `release_asse
 |---|---|---|
 | Host of every first request | `https://github.com` | Every file must stay reachable there. |
 | Hosts a redirect may reach | `github.com`, or a subdomain of `githubusercontent.com` other than `raw.githubusercontent.com` and its subdomains, over HTTPS, at most 5 hops | A release asset served from anywhere else is refused. |
-| Paths | `/NPGameDev/godot-mcp-toolkit/releases/download/trust-N/trust-N.json` and `/NPGameDev/godot-mcp-toolkit/releases/download/v<version>/<asset>` | Every document and release must stay at these paths. |
+| Paths | `/NPGameDev/godot-mcp-toolkit/releases/download/v<version>/<asset>`, for a trust document as for a release's other files | Every release must stay at this path, with every document after the first beside it. |
 | Asset names | `trust-N.json`, `godot-mcp-toolkit-<version>.zip`, `godot-mcp-toolkit-<version>.update.json` and `godot-mcp-toolkit-<version>.update.json.sig` | A release must publish these exact names. |
 
-Each name is built from the document's number or the version alone, never taken from a reply. A
+Each URL is built from the version, and a document's from its number too, never taken from a reply. A
 test-only variable, `GODOT_MCP_UPDATE_CHECK_HOST`, can replace the scheme and host with a loopback
 address and nothing else. A server there can serve only what the keys signed: it can withhold the
 next document, which ends the walk, or a release's files, which stops that install, but it cannot
@@ -391,8 +405,17 @@ rotating past a document with a new field, teach the script that field, or the n
   changing that check too.
 - **If every root is lost, no document can ever be signed again.** The release key can then never change,
   and losing it strands every client until a hand reinstall.
-- **Every `trust-N` must stay hosted.** A client needs exactly the next one, so a gap stops every client
-  behind it.
+- **Every release must carry the whole chain.** A client asks the release it is verifying for exactly
+  the next document, so a release that lacks one stops every client behind it there.
+- **Whoever can publish releases can hide a revocation by leaving it out.** A release published without
+  the revoking document, or an older release kept as the latest, leaves clients on the keys they hold.
+  `publish-release.sh` refuses to publish such a release, but someone with the repository's publish
+  rights need not use it.
+- **The signing script comes from `main`.** `sign-release.sh` runs from a clone of `main` and reads
+  the passphrase, so a malicious change merged there could take the key. Review of what lands on
+  `main`, and the maintainer reading the clone's own `scripts/` changes since the copy last reviewed,
+  before running it, are what stand against it. The sign's display covers the tag, not the clone's
+  tip, and comes from the script itself, so neither it nor the script's checks can.
 - **It cannot force an update.** Someone with repo access can keep an old release as latest. A manifest's
   `expires_at` informs and never refuses.
 - **With no absolute data folder there is no store.** With no `APPDATA` or `HOME`, Godot can answer `.`, the
@@ -410,7 +433,8 @@ The applier refuses anything not newer, so going back never runs through the upd
 has no part in the move itself. Going back undoes no revocation: the older version reads the same store
 and walks from its own embedded document to the same latest one. A machine that only ever saw a newer
 embedded document has no stored files for the numbers before it, so the older version trusts what its
-embedded document lists until it has fetched them. That is one more reason every `trust-N` stays hosted.
+embedded document lists until it has fetched them, from the next release it verifies. That is one more
+reason every release carries the whole chain.
 
 A release signed by a dropped key cannot be reached by an update, since no client that holds the dropping
 document trusts that key.

@@ -305,15 +305,23 @@ The tag run takes about an hour. Then publish from your machine with `scripts/pu
 gh run watch <the tag's release.yml run>
 bash scripts/publish-release.sh check v<version>
 bash scripts/publish-release.sh draft v<version>
-bash scripts/sign-release.sh dist-plugin/release-v<version>/godot-mcp-toolkit-<version>.update.json <private-key.pem>
+# The sign: in the admin account, from a fresh anonymous clone of the toolkit's main.
+bash scripts/sign-release.sh v<version> <the zip draft handed over> <private-key.pem>
 bash scripts/publish-release.sh attach v<version>
 gh release edit v<version> --notes-file <merged-changelog.md>
 bash scripts/publish-release.sh publish v<version>
 ```
 
+The sign is the one step in another account: a separate admin account that holds the release key and
+runs no coding agent. `draft` leaves the zip in a new folder under `/Users/Shared` and prints the sign
+command; the sign leaves the manifest and its `.sig` in another, which `attach` finds by the tag. The
+sign shows what the tag would release but not its commit, and asks for the first 8 hex digits of the
+commit as the tag's page on github.com shows it.
+
 `attach` needs `GODOT_BIN_4_2` and `GODOT_BIN_4_7` set to those two Godot binaries for its reader
 check. The body goes on the draft before `publish`: the merged changelog Phase 7 describes. A
-release that ships a new trust document publishes with `publish trust-<N> v<version>` instead.
+release whose tag holds a new trust document takes the same commands: `draft` uploads the tag's
+documents with the zip, and they go public with the release.
 
 `publish` ends by printing the line for `trust/released-manifests.txt`. Add it through a pull request
 from `chore/ledger-<version>`.
@@ -340,7 +348,7 @@ below:
 | Zip to upload | `https://github.com/NPGameDev/godot-mcp-toolkit/releases/download/v<ver>/godot-mcp-toolkit-<ver>.zip` | the CI-built zip, never a local build |
 | Legacy Asset Library, edit | https://godotengine.org/asset-library/asset/edit/23816 | version + full 40-char Download Commit; re-enters moderation |
 | Legacy Asset Library, public | https://godotengine.org/asset-library/asset/23816 | check the version after moderation |
-| Toolkit GitHub Release | `https://github.com/NPGameDev/godot-mcp-toolkit/releases/tag/v<ver>` | body leads with the merged changelog; zip, update manifest and `.sig` attached |
+| Toolkit GitHub Release | `https://github.com/NPGameDev/godot-mcp-toolkit/releases/tag/v<ver>` | body leads with the merged changelog; zip, update manifest and `.sig` attached, and every trust document after the first |
 | Server GitHub Release | `https://github.com/NPGameDev/godot-mcp-server/releases/tag/v<ver>` | body leads with the server's own CHANGELOG section |
 | npm | `https://www.npmjs.com/package/@npgamedev/godot-mcp-server/v/<ver>` | version, provenance badge, images |
 
