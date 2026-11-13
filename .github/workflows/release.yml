@@ -1,22 +1,29 @@
 name: Release
 
-# Release path — gated on the deep behavioral tier and dry-runnable.
+# Release path — gated on the deep behavioral tier and the floor, and read-only.
 #
-# Two entry points:
-#   • v* tag push       → real release: the behavioral matrix and the full floor
-#                         (ci.yml with the macOS apply-kill rows) run first (via
-#                         workflow_call), then the zip is built, install-smoked,
-#                         and uploaded as a GitHub Release.
-#   • workflow_dispatch → DRY-RUN by default: runs EVERYTHING (the called behavioral
-#                         matrix and floor + the zip build + the install-smoke) but skips the
-#                         GH-Release creation. Makes the whole release path testable
-#                         off a tag, before a real release first fires it. Dispatching
-#                         ON a tag ref with dry-run: false is the manual re-run
-#                         escape hatch after a transient tag-push failure.
+# This workflow builds and checks the release's files and uploads them as a workflow
+# artifact. It never creates or edits a GitHub Release: the maintainer drafts, signs
+# and publishes the release from their own machine (scripts/publish-release.sh),
+# starting from the artifact of the tag's run.
+#
+# Two entry points, running the same jobs:
+#   • v* tag push       → the behavioral matrix and the full floor (ci.yml with the
+#                         macOS apply-kill rows) run first (via workflow_call), then
+#                         the zip and its update manifest are built, install-smoked,
+#                         checked against the tagged tree and uploaded as the
+#                         artifact release-<tag>.
+#   • workflow_dispatch → from a branch, a dry run: the same path without the checks
+#                         that need a tag (the tag against plugin.cfg, the CHANGELOG
+#                         and the server pin), with the commit standing in for the
+#                         tag. Makes the whole release path testable before a tag
+#                         exists. Dispatching ON a tag ref runs everything the tag
+#                         push runs: the manual re-run escape hatch after a
+#                         transient tag-push failure.
 #
 # ⚠ Called-workflow gate caveat: the behavioral callee evaluates github.ref /
 # event_name from THIS (caller) context — a v* tag push satisfies its
-# startsWith(github.ref,'refs/tags/v') gates; a dry-run dispatch satisfies its
+# startsWith(github.ref,'refs/tags/v') gates; a dispatch satisfies its
 # event_name=='workflow_dispatch' gates. If release.yml ever gains a NEW trigger type
 # (e.g. schedule), the callee's opt-in jobs would all-skip and the behavioral: call
 # would succeed VACUOUSLY, un-gating the release — re-verify the callee gates whenever
@@ -26,21 +33,16 @@ on:
   push:
     tags: ["v*"]
   workflow_dispatch:
-    inputs:
-      dry-run:
-        description: "Run the full gated release path (behavioral matrix + floor + zip build + install-smoke) but skip the GH Release. Default true — a manual dispatch can never accidentally release; real releases fire via tag push (inputs empty)."
-        type: boolean
-        required: false
-        default: true
 
-# A re-dispatch must never race a still-running tag run, and a release job must
-# never be killed mid-release — so cancel-in-progress is false.
+# A dispatch on a tag ref must never race that tag's still-running run, and a later
+# run must never cancel one in progress — so cancel-in-progress is false.
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
-# Least privilege at the top; the zip job re-grants contents: write for the GH
-# Release upload.
+# Least privilege for the whole workflow: no job re-grants a write, so no run can
+# create or change a release, a tag or a branch. Uploading a workflow artifact needs
+# no repository permission.
 permissions:
   contents: read
 
@@ -61,19 +63,15 @@ jobs:
     with:
       macos-kill: true
 
-  build-and-release:
+  build-and-upload:
     needs: [behavioral, floor]
     runs-on: ubuntu-latest
-    # Re-grant write for the GH Release upload.
-    permissions:
-      contents: write
     steps:
       - uses: actions/checkout@v7
 
-      # Real releases fire on a tag push (github.ref_type == 'tag'); a dispatch from
-      # a branch has ref_type 'branch', so this check would spuriously fail — skip it
-      # off a tag. The Release upload below carries the same tag guard plus the
-      # dry-run guard.
+      # A dispatch from a branch has ref_type 'branch' and no tag to compare, so this
+      # check would spuriously fail — skip it off a tag. The sibling-pin steps below
+      # carry the same tag guard.
       - name: Validate tag matches plugin.cfg version
         if: github.ref_type == 'tag'
         run: |
@@ -129,7 +127,7 @@ jobs:
       - name: Build plugin zip
         run: bash scripts/build-plugin-release.sh
 
-      # Zip install-smoke (runs on dry-runs too; that's the point): prove the
+      # Zip install-smoke (on a dry run too; that's the point): prove the
       # artifact we are about to ship actually INSTALLS and BOOTS, not just that it
       # zipped. Unzip the built artifact into a scratch project (minimal
       # project.godot with the plugin pre-enabled — the same shape as the server's
@@ -218,14 +216,45 @@ jobs:
           UPDATE_FLOW_SKIP_BUILD: "1"
         run: bash scripts/test_framework/update_flow.sh godot
 
-      # Upload only on a real tag push, and NEVER on a dry-run. Dispatching ON a tag
-      # ref with dry-run: false is the deliberate manual re-run path. inputs['dry-run']
-      # (bracket form — the property name has a hyphen) is null on a tag push -> != true.
-      - name: Upload release artifact
-        if: ${{ github.ref_type == 'tag' && inputs['dry-run'] != true }}
-        uses: softprops/action-gh-release@v3
+      # What the two steps below share. On a tag ref the artifact is release-<tag>,
+      # the name scripts/publish-release.sh downloads. A dispatch from a branch has no
+      # tag, so the commit stands in for it, both in the artifact's name and as the
+      # revision the zip is checked against: a dry run then runs both steps too.
+      - name: Name the release files
+        run: |
+          VERSION="$(grep '^version=' addons/godot_mcp_toolkit/plugin.cfg | cut -d'"' -f2)"
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            REVISION="$GITHUB_REF_NAME"
+            ARTIFACT="release-$GITHUB_REF_NAME"
+          else
+            REVISION="$GITHUB_SHA"
+            ARTIFACT="release-untagged-$GITHUB_SHA"
+          fi
+          {
+            echo "RELEASE_ZIP=dist-plugin/godot-mcp-toolkit-$VERSION.zip"
+            echo "RELEASE_MANIFEST=dist-plugin/godot-mcp-toolkit-$VERSION.update.json"
+            echo "RELEASE_REVISION=$REVISION"
+            echo "RELEASE_ARTIFACT=$ARTIFACT"
+          } >> "$GITHUB_ENV"
+
+      # The zip against the committed tree at the revision, so a zip that differs from
+      # what the tag holds fails here. An early warning only: the run that decides is
+      # the same check on the maintainer's machine, on the downloaded artifact.
+      - name: Check the zip against the tree
+        run: |
+          test -f "$RELEASE_MANIFEST" || {
+            echo "::error::$RELEASE_MANIFEST is missing; the artifact needs the zip and its manifest."
+            exit 1
+          }
+          node scripts/check-release-zip.mjs "$RELEASE_ZIP" "$RELEASE_REVISION"
+
+      # The zip and its unsigned manifest, by exact name so the artifact holds those two
+      # files and nothing else.
+      - name: Upload the release files
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         with:
-          generate_release_notes: true
-          files: |
-            dist-plugin/godot-mcp-toolkit-*.zip
-            dist-plugin/godot-mcp-toolkit-*.update.json
+          name: ${{ env.RELEASE_ARTIFACT }}
+          path: |
+            ${{ env.RELEASE_ZIP }}
+            ${{ env.RELEASE_MANIFEST }}
+          if-no-files-found: error

@@ -38,7 +38,7 @@ on:
         default: false
 
 # Supply-chain baseline: least privilege by default. No floor job
-# writes repo contents; the release path grants its own contents: write per-job.
+# writes repo contents, and neither does the release path that calls the floor.
 permissions:
   contents: read
 
