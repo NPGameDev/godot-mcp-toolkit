@@ -1,0 +1,15 @@
+# Keeps the SHA-pinned actions current. Every `uses:` names a full commit SHA with a
+# `# vX.Y.Z` comment; Dependabot bumps both together. "/" covers .github/workflows;
+# the composite actions live in their own folders and need listing.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directories:
+      - "/"
+      - "/.github/actions/*"
+    schedule:
+      interval: monthly
+    groups:
+      github-actions:
+        patterns:
+          - "*"

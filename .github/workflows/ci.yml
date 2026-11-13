@@ -67,7 +67,7 @@ jobs:
     outputs:
       code: ${{ steps.classify.outputs.code }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 2
       - id: classify
@@ -78,7 +78,7 @@ jobs:
     runs-on: ubuntu-latest
     name: "Docs and script checks (no Godot)"
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # Docs-drift gate: README headline numbers match the pinned tool-surface
       # counts and no retired vocabulary appears in user-facing docs
@@ -121,7 +121,7 @@ jobs:
     runs-on: macos-latest
     name: "Release script tests (macOS)"
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Release files script test
         run: |
@@ -157,11 +157,9 @@ jobs:
     timeout-minutes: 10
     name: "Trust documents read by the reader (Godot 4.7.0)"
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Setup Godot
-        # pinned to v2.4.1 — update tag manually after reviewing changelogs
-        uses: chickensoft-games/setup-godot@v2.4.1
+      - name: Setup Godot        uses: chickensoft-games/setup-godot@f166999204a4f2722c6fe042fbaa3b3ea0d9c789 # v2.4.1
         with:
           version: "4.7.0"
           use-dotnet: false
@@ -201,11 +199,9 @@ jobs:
             quit-after: "30"
     name: "Static validation (GDScript editor · Godot ${{ matrix.godot-version }})"
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Setup Godot
-        # pinned to v2.4.1 — update tag manually after reviewing changelogs
-        uses: chickensoft-games/setup-godot@v2.4.1
+      - name: Setup Godot        uses: chickensoft-games/setup-godot@f166999204a4f2722c6fe042fbaa3b3ea0d9c789 # v2.4.1
         with:
           version: ${{ matrix.godot-version }}
           use-dotnet: false
@@ -238,7 +234,7 @@ jobs:
         godot-version: ["4.2.0", "4.3.0", "4.4.0", "4.5.0", "4.6.0", "4.7.0"]
     name: "Unit tests (GDScript editor · Godot ${{ matrix.godot-version }})"
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/godot-units
         with:
           godot-version: ${{ matrix.godot-version }}
@@ -264,11 +260,9 @@ jobs:
         godot-version: ["4.2.0", "4.7.0"]
     name: "Update flow (GDScript editor · Godot ${{ matrix.godot-version }})"
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Setup Godot
-        # pinned to v2.4.1 — update tag manually after reviewing changelogs
-        uses: chickensoft-games/setup-godot@v2.4.1
+      - name: Setup Godot        uses: chickensoft-games/setup-godot@f166999204a4f2722c6fe042fbaa3b3ea0d9c789 # v2.4.1
         with:
           version: ${{ matrix.godot-version }}
           use-dotnet: false
@@ -288,7 +282,7 @@ jobs:
     timeout-minutes: 10
     name: "Release builds agree (bash · PowerShell)"
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Compare the two release builds
         run: bash scripts/test_framework/check_release_builds.sh
@@ -318,11 +312,9 @@ jobs:
         godot-version: ["4.2.0", "4.3.0", "4.4.0", "4.5.0", "4.6.0", "4.7.0"]
     name: "Manifest diff (extension_api · Godot ${{ matrix.godot-version }})"
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Setup Godot
-        # pinned to v2.4.1 — update tag manually after reviewing changelogs
-        uses: chickensoft-games/setup-godot@v2.4.1
+      - name: Setup Godot        uses: chickensoft-games/setup-godot@f166999204a4f2722c6fe042fbaa3b3ea0d9c789 # v2.4.1
         with:
           version: ${{ matrix.godot-version }}
           use-dotnet: false
@@ -382,11 +374,9 @@ jobs:
         godot-version: ["4.2.0", "4.3.0", "4.4.0", "4.5.0", "4.6.0", "4.7.0"]
     name: "Export strip (pack export · Godot ${{ matrix.godot-version }})"
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Setup Godot
-        # pinned to v2.4.1 — update tag manually after reviewing changelogs
-        uses: chickensoft-games/setup-godot@v2.4.1
+      - name: Setup Godot        uses: chickensoft-games/setup-godot@f166999204a4f2722c6fe042fbaa3b3ea0d9c789 # v2.4.1
         with:
           version: ${{ matrix.godot-version }}
           use-dotnet: false
@@ -460,11 +450,9 @@ jobs:
             godot-version: "4.7.0"
     name: "Apply kill legs (real editor · ${{ matrix.os }} · Godot ${{ matrix.os == 'macos-latest' && matrix.godot-version == '4.5.0' && '4.5.2' || matrix.godot-version }})"
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Setup Godot
-        # pinned to v2.4.1 — update tag manually after reviewing changelogs
-        uses: chickensoft-games/setup-godot@v2.4.1
+      - name: Setup Godot        uses: chickensoft-games/setup-godot@f166999204a4f2722c6fe042fbaa3b3ea0d9c789 # v2.4.1
         with:
           version: ${{ env.KILL_GODOT_VERSION }}
           use-dotnet: false
@@ -496,7 +484,7 @@ jobs:
 
       - name: Upload the evidence
         if: ${{ always() }}
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         with:
           name: apply-kill-${{ runner.os }}-${{ env.KILL_GODOT_VERSION }}
           path: ${{ runner.temp }}/apply-kill/logs

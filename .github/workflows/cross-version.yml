@@ -155,7 +155,7 @@ jobs:
     outputs:
       code: ${{ steps.classify.outputs.code }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 2
       - id: classify
@@ -190,9 +190,9 @@ jobs:
         godot-version: ["4.2.0", "4.2.2", "4.3.0", "4.4.0", "4.5.0", "4.6.0", "4.7.0"]
     name: "Full smoke+flows (GDScript editor · Godot ${{ matrix.godot-version }})"
     steps:
-      - uses: actions/checkout@v7 # toolkit (self) = the editor/dogfood project
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 - toolkit (self) = the editor/dogfood project
 
-      - uses: actions/checkout@v7 # server = smoke + flows harness + shared composite
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 - server = smoke + flows harness + shared composite
         with:
           repository: NPGameDev/godot-mcp-server
           path: server
@@ -252,11 +252,9 @@ jobs:
       run:
         shell: bash
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Setup Godot
-        # pinned to v2.4.1 — update tag manually after reviewing changelogs
-        uses: chickensoft-games/setup-godot@v2.4.1
+      - name: Setup Godot        uses: chickensoft-games/setup-godot@f166999204a4f2722c6fe042fbaa3b3ea0d9c789 # v2.4.1
         with:
           version: ${{ matrix.godot-version }}
           use-dotnet: false
@@ -302,11 +300,9 @@ jobs:
         godot-version: ["4.2.0", "4.5.0", "4.7.0"]
     name: "Update GUI (GDScript editor · Godot ${{ matrix.godot-version }})"
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Setup Godot
-        # pinned to v2.4.1 — update tag manually after reviewing changelogs
-        uses: chickensoft-games/setup-godot@v2.4.1
+      - name: Setup Godot        uses: chickensoft-games/setup-godot@f166999204a4f2722c6fe042fbaa3b3ea0d9c789 # v2.4.1
         with:
           version: ${{ matrix.godot-version }}
           use-dotnet: false
@@ -372,9 +368,9 @@ jobs:
     # ".NET/mono" where they describe the editor build.
     name: "Full smoke+flows (mono editor · Godot ${{ matrix.godot-version }} / ${{ matrix.tfm }})"
     steps:
-      - uses: actions/checkout@v7 # toolkit (self) = addon source (injected into fixture)
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 - toolkit (self) = addon source (injected into fixture)
 
-      - uses: actions/checkout@v7 # server = harness + C# fixture + shared composite
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 - server = harness + C# fixture + shared composite
         with:
           repository: NPGameDev/godot-mcp-server
           path: server
@@ -429,7 +425,7 @@ jobs:
     # tier above.
     name: "Unit tests (mono editor · Godot ${{ matrix.godot-version }})"
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/godot-units
         with:
           godot-version: ${{ matrix.godot-version }}
@@ -550,9 +546,9 @@ jobs:
         include: ${{ fromJSON(needs.platform-setup.outputs.matrix) }}
     name: "Full smoke+flows (${{ matrix.os_label }} ${{ matrix.version }} · ${{ matrix.editor_label }})"
     steps:
-      - uses: actions/checkout@v7 # toolkit (self) = editor/dogfood project + addon source
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 - toolkit (self) = editor/dogfood project + addon source
 
-      - uses: actions/checkout@v7 # server = harness + C# fixture + shared composite
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 - server = harness + C# fixture + shared composite
         with:
           repository: NPGameDev/godot-mcp-server
           path: server

@@ -20,9 +20,7 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Setup Godot (Godot ${{ inputs.godot-version }})
-      # pinned to v2.4.1 — update tag manually after reviewing changelogs
-      uses: chickensoft-games/setup-godot@v2.4.1
+    - name: Setup Godot (Godot ${{ inputs.godot-version }})      uses: chickensoft-games/setup-godot@f166999204a4f2722c6fe042fbaa3b3ea0d9c789 # v2.4.1
       with:
         version: "${{ inputs.godot-version }}"
         use-dotnet: ${{ inputs.use-dotnet }}
@@ -30,7 +28,7 @@ runs:
     # The .NET/mono editor build needs the .NET runtime/SDKs to launch.
     - name: Setup .NET SDKs (8 + 6, mono editor runtime)
       if: ${{ inputs.use-dotnet == 'true' }}
-      uses: actions/setup-dotnet@v5
+      uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
       with:
         dotnet-version: |
           8.0.x
