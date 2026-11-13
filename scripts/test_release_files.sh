@@ -7,7 +7,9 @@
 #   - both build scripts on a fixture repo: the missing .uid and the unreadable commit
 #     time refused, the list and manifest pinned, the .ps1 matching them and ASCII; the
 #     bash build also refusing an unreadable Godot floor or server pin;
-#   - scripts/sign-release.sh with plain, encrypted, mismatched and non-RSA keys;
+#   - scripts/sign-release.sh in a tagged repo made here, with stand-ins for gh and
+#     sleep: plain, encrypted, unlisted and non-RSA keys, the draft's digest, and the
+#     trust document at the tag;
 #   - scripts/check_release_files.sh's failures, on real zips.
 #
 # The real builds need zip, unzip and pwsh, the check's cases need zip and unzip, and the
@@ -298,6 +300,8 @@ fi
 
 echo "── sign-release.sh ──"
 SIGN="${REPO_ROOT}/scripts/sign-release.sh"
+SIGN_REPO="${WORK}/sign-repo"
+TRUST_TOOL="${REPO_ROOT}/scripts/trust-document.sh"
 KEYS="${WORK}/keys"
 SIGNING="${WORK}/signing"
 SIG_NAME="godot-mcp-toolkit-1.2.0.update.json.sig"
@@ -311,11 +315,99 @@ openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -aes-256-cbc -pass 
 openssl pkey -in "${KEYS}/encrypted.pem" -passin "pass:${PASSPHRASE}" -pubout -out "${KEYS}/encrypted.pub.pem" 2>/dev/null
 openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:prime256v1 -out "${KEYS}/ec.pem" 2>/dev/null
 openssl pkey -in "${KEYS}/ec.pem" -pubout -out "${KEYS}/ec.pub.pem" 2>/dev/null
+# A root for the fixture's trust documents, and a release key none of them lists.
+for name in root unlisted; do
+  openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out "${KEYS}/${name}.pem" 2>/dev/null
+  openssl pkey -in "${KEYS}/${name}.pem" -pubout -out "${KEYS}/${name}.pub.pem" 2>/dev/null
+done
+
+# Commits the fixture repo's trust folder, if it has one yet, and tags that commit $1.
+tag_sign_repo() {
+  [[ ! -d "${SIGN_REPO}/trust" ]] || git -C "${SIGN_REPO}" -c core.autocrlf=false add trust
+  git -C "${SIGN_REPO}" -c user.name=fixture -c user.email=fixture@example.invalid -c commit.gpgsign=false \
+    commit -q --allow-empty -m "$1"
+  git -C "${SIGN_REPO}" -c tag.gpgsign=false tag "$1"
+}
+
+# Three tags: v1.1.0 with no trust document, v1.2.0 with trust-1 listing the plain and
+# the encrypted key, and v1.2.1 with trust-2 added, which drops the plain key. The
+# documents are unsigned: sign-release.sh reads a document's release keys and leaves its
+# signatures to trust-document.sh verify.
+mkdir -p "${SIGN_REPO}"
+git -C "${SIGN_REPO}" init -q
+tag_sign_repo v1.1.0
+mkdir -p "${SIGN_REPO}/trust"
+bash "${TRUST_TOOL}" build --first --add-root "${KEYS}/root.pub.pem" \
+  --add-release "${KEYS}/plain.pub.pem" --add-release "${KEYS}/encrypted.pub.pem" --out "${SIGN_REPO}/trust" >/dev/null
+tag_sign_repo v1.2.0
+bash "${TRUST_TOOL}" build "${SIGN_REPO}/trust/trust-1.json" --drop-release "${KEYS}/plain.pub.pem" >/dev/null
+tag_sign_repo v1.2.1
+# sign-release.sh reads the tags of the checkout it sits in. git reads GIT_DIR before the
+# folder it is pointed at, so until the unset below those reads land in the repo above.
+export GIT_DIR="${SIGN_REPO}/.git"
+
+# Stand-ins for the two tools signing waits on: a gh, named by GH_BIN, that answers the
+# two reads sign-release.sh makes from files a case writes with set_draft, and a sleep on
+# the PATH that only counts.
+SYSTEM_PATH="${PATH}"
+export GH_BIN="${WORK}/gh-stand-in/gh"
+export DRAFT="${WORK}/draft"
+mkdir -p "${WORK}/tools" "${WORK}/gh-stand-in" "${DRAFT}"
+cat > "${WORK}/gh-stand-in/gh" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "${DRAFT}/gh.log"
+[[ "$1" == "api" ]] || exit 1
+case "$2" in
+  "repos/{owner}/{repo}/releases")
+    cat "${DRAFT}/ids"
+    ;;
+  "repos/{owner}/{repo}/releases/"*"/assets")
+    # One line of the digests per read; the last line answers every read after it.
+    reads="$(( $(cat "${DRAFT}/reads") + 1 ))"
+    printf '%s\n' "${reads}" > "${DRAFT}/reads"
+    lines="$(wc -l < "${DRAFT}/digests" | tr -d ' ')"
+    sed -n "$(( reads < lines ? reads : lines ))p" "${DRAFT}/digests"
+    ;;
+  *)
+    exit 1
+    ;;
+esac
+STUB
+cat > "${WORK}/tools/sleep" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$1" >> "${DRAFT}/sleep.log"
+STUB
+chmod +x "${WORK}/gh-stand-in/gh" "${WORK}/tools/sleep"
+PATH="${WORK}/tools:${PATH}"
+
+# Sets what GitHub answers from here on: $1 is the id of each draft tagged for the
+# release, a line each, and the arguments after it are the manifest asset's digest at
+# each read, the last one repeating.
+set_draft() {
+  local ids="$1"
+  shift
+  printf '%s\n' "${ids}" > "${DRAFT}/ids"
+  printf '%s\n' "$@" > "${DRAFT}/digests"
+  echo 0 > "${DRAFT}/reads"
+  rm -f "${DRAFT}/gh.log" "${DRAFT}/sleep.log"
+}
+log_lines() {
+  if [[ -f "$1" ]]; then
+    wc -l < "$1" | tr -d ' '
+  else
+    echo 0
+  fi
+}
 
 # Gives a new folder a manifest; $2 is the manifest's file name there.
 make_signing_case() {
   mkdir -p "${SIGNING}/$1"
   cp "${WORK}/manifest.expected" "${SIGNING}/$1/$2"
+}
+# Gives a new folder the manifest of another version, $2, under that version's name.
+make_versioned_case() {
+  mkdir -p "${SIGNING}/$1"
+  sed "s/\"version\": \"1.2.0\"/\"version\": \"$2\"/" "${WORK}/manifest.expected" > "${SIGNING}/$1/godot-mcp-toolkit-$2.update.json"
 }
 # Runs sign-release.sh with the line $1 piped to its stdin.
 sign_piped() {
@@ -324,21 +416,27 @@ sign_piped() {
   OUT="$(bash "${SIGN}" "$@" 2>&1 < <(printf '%s\n' "${stdin_line}"))" && STATUS=0 || STATUS=$?
 }
 
+MANIFEST_DIGEST="sha256:$(openssl_sha256 "${WORK}/manifest.expected")"
+set_draft 42 "${MANIFEST_DIGEST}"
+
 make_signing_case plain "godot-mcp-toolkit-1.2.0.update.json"
-sign_piped "${UNUSED_LINE}" "${SIGNING}/plain/godot-mcp-toolkit-1.2.0.update.json" "${KEYS}/plain.pem" "${KEYS}/plain.pub.pem"
+sign_piped "${UNUSED_LINE}" "${SIGNING}/plain/godot-mcp-toolkit-1.2.0.update.json" "${KEYS}/plain.pem"
 check "plain key through the pipe: signed" equals "${STATUS}" "0"
 check "plain key: the .sig verifies with openssl directly" verifies "${KEYS}/plain.pub.pem" "${SIGNING}/plain/${SIG_NAME}" "${SIGNING}/plain/godot-mcp-toolkit-1.2.0.update.json"
 check "plain key: the raw 256-byte signature of an RSA-2048 key" equals "$(file_size "${SIGNING}/plain/${SIG_NAME}")" "256"
-check "plain key: the output says to upload to the draft" contains "${OUT}" "draft before publishing"
-check "plain key: the upload command names the manifest's version" contains "${OUT}" "gh release upload v1.2.0 "
+check "plain key: the output says to attach it to the draft" contains "${OUT}" "Attach it to the draft"
+check "plain key: the attach command names the manifest's version" contains "${OUT}" "scripts/publish-release.sh attach v1.2.0"
+check "plain key: the manifest's SHA-256 is printed" contains "${OUT}" "the manifest here       ${MANIFEST_DIGEST}"
+check "plain key: the draft's digest is printed beside it" contains "${OUT}" "the draft's manifest    ${MANIFEST_DIGEST}"
+check "plain key: the assets read names the draft's id" contains "$(cat "${DRAFT}/gh.log")" "repos/{owner}/{repo}/releases/42/assets"
 
 make_signing_case encrypted "godot-mcp-toolkit-1.2.0.update.json"
-sign_piped "${PASSPHRASE}" "${SIGNING}/encrypted/godot-mcp-toolkit-1.2.0.update.json" "${KEYS}/encrypted.pem" "${KEYS}/encrypted.pub.pem"
+sign_piped "${PASSPHRASE}" "${SIGNING}/encrypted/godot-mcp-toolkit-1.2.0.update.json" "${KEYS}/encrypted.pem"
 check "encrypted key through a pipe: signed" equals "${STATUS}" "0"
 check "encrypted key: the .sig verifies with openssl directly" verifies "${KEYS}/encrypted.pub.pem" "${SIGNING}/encrypted/${SIG_NAME}" "${SIGNING}/encrypted/godot-mcp-toolkit-1.2.0.update.json"
 
 make_signing_case wrong-pass "godot-mcp-toolkit-1.2.0.update.json"
-sign_piped "not-the-passphrase" "${SIGNING}/wrong-pass/godot-mcp-toolkit-1.2.0.update.json" "${KEYS}/encrypted.pem" "${KEYS}/encrypted.pub.pem"
+sign_piped "not-the-passphrase" "${SIGNING}/wrong-pass/godot-mcp-toolkit-1.2.0.update.json" "${KEYS}/encrypted.pem"
 check "the wrong passphrase fails" equals "$([[ "${STATUS}" -ne 0 ]] && echo failed || echo passed)" "failed"
 check "the wrong passphrase leaves no .sig" no_file "${SIGNING}/wrong-pass/${SIG_NAME}"
 
@@ -364,18 +462,18 @@ private_key_reads() {
 
 make_signing_case once "godot-mcp-toolkit-1.2.0.update.json"
 PATH="${WORK}/stub:${ORIGINAL_PATH}"
-sign_piped "${PASSPHRASE}" "${SIGNING}/once/godot-mcp-toolkit-1.2.0.update.json" "${KEYS}/encrypted.pem" "${KEYS}/encrypted.pub.pem"
+sign_piped "${PASSPHRASE}" "${SIGNING}/once/godot-mcp-toolkit-1.2.0.update.json" "${KEYS}/encrypted.pem"
 PATH="${ORIGINAL_PATH}"
 check "the private key is read exactly once" equals "$(private_key_reads "${KEYS}/encrypted.pem")" "1"
 
 make_signing_case ec "godot-mcp-toolkit-1.2.0.update.json"
 rm -f "${OPENSSL_LOG}"
 PATH="${WORK}/stub:${ORIGINAL_PATH}"
-sign_piped "${UNUSED_LINE}" "${SIGNING}/ec/godot-mcp-toolkit-1.2.0.update.json" "${KEYS}/ec.pem" "${KEYS}/ec.pub.pem"
+sign_piped "${UNUSED_LINE}" "${SIGNING}/ec/godot-mcp-toolkit-1.2.0.update.json" "${KEYS}/ec.pem"
 PATH="${ORIGINAL_PATH}"
 check "an EC key is refused" equals "${STATUS}" "1"
 check "the refusal says RSA" contains "${OUT}" "not an RSA key"
-check "the refusal comes before the private key is read" equals "$(private_key_reads "${KEYS}/ec.pem")" "0"
+check "the refusal comes at the one read of the private key" equals "$(private_key_reads "${KEYS}/ec.pem")" "1"
 check "the refusal leaves no .sig" no_file "${SIGNING}/ec/${SIG_NAME}"
 
 # An RSA-PSS key prints a modulus like a plain RSA key, but signs with another padding.
@@ -384,63 +482,142 @@ if openssl genpkey -algorithm RSA-PSS -pkeyopt rsa_keygen_bits:2048 -out "${KEYS
   && openssl pkey -in "${KEYS}/pss.pem" -pubout -out "${KEYS}/pss.pub.pem" 2>/dev/null \
   && openssl pkey -pubin -in "${KEYS}/pss.pub.pem" -noout -text >/dev/null 2>&1; then
   make_signing_case pss "godot-mcp-toolkit-1.2.0.update.json"
-  sign_piped "${UNUSED_LINE}" "${SIGNING}/pss/godot-mcp-toolkit-1.2.0.update.json" "${KEYS}/pss.pem" "${KEYS}/pss.pub.pem"
+  sign_piped "${UNUSED_LINE}" "${SIGNING}/pss/godot-mcp-toolkit-1.2.0.update.json" "${KEYS}/pss.pem"
   check "an RSA-PSS key is refused" equals "${STATUS}" "1"
   check "the RSA-PSS refusal says RSA" contains "${OUT}" "not an RSA key"
   check "the RSA-PSS refusal leaves no .sig" no_file "${SIGNING}/pss/${SIG_NAME}"
-  run bash "${SIGN}" --key-entry "${KEYS}/pss.pub.pem"
-  check "--key-entry refuses an RSA-PSS key" equals "${STATUS}" "1"
 else
   skip "the RSA-PSS case needs an openssl that makes and prints such a key"
 fi
 
-make_signing_case mismatched "godot-mcp-toolkit-1.2.0.update.json"
-sign_piped "${UNUSED_LINE}" "${SIGNING}/mismatched/godot-mcp-toolkit-1.2.0.update.json" "${KEYS}/plain.pem" "${KEYS}/encrypted.pub.pem"
-check "another key's public half fails" equals "${STATUS}" "1"
-check "the failure leaves no .sig" no_file "${SIGNING}/mismatched/${SIG_NAME}"
-check "the failure leaves no temporary file" no_file "${SIGNING}/mismatched/${SIG_NAME}.tmp"
+make_signing_case unlisted "godot-mcp-toolkit-1.2.0.update.json"
+sign_piped "${UNUSED_LINE}" "${SIGNING}/unlisted/godot-mcp-toolkit-1.2.0.update.json" "${KEYS}/unlisted.pem"
+check "a key that is no release key of the document at the tag fails" equals "${STATUS}" "1"
+check "the failure leaves no .sig" no_file "${SIGNING}/unlisted/${SIG_NAME}"
+check "the failure leaves no temporary file" no_file "${SIGNING}/unlisted/${SIG_NAME}.tmp"
+check "the failure names the document and its tag" contains "${OUT}" "none of the 2 release keys of trust-1.json at v1.2.0"
 
 make_signing_case renamed "some-other-name.json"
-sign_piped "${UNUSED_LINE}" "${SIGNING}/renamed/some-other-name.json" "${KEYS}/plain.pem" "${KEYS}/plain.pub.pem"
+sign_piped "${UNUSED_LINE}" "${SIGNING}/renamed/some-other-name.json" "${KEYS}/plain.pem"
 check "a manifest under another path: signed" equals "${STATUS}" "0"
 check "the .sig takes its name from the version" is_file "${SIGNING}/renamed/${SIG_NAME}"
 check "the .sig does not take its name from the path" no_file "${SIGNING}/renamed/some-other-name.json.sig"
-run bash "${SIGN}" --verify "${SIGNING}/renamed/some-other-name.json" "${KEYS}/plain.pub.pem"
+run bash "${SIGN}" --verify "${SIGNING}/renamed/some-other-name.json"
 check "--verify finds it under that same name" equals "${STATUS}" "0"
 
 make_signing_case no-version "godot-mcp-toolkit-1.2.0.update.json"
 printf '{"format": 1, "version": "../../evil"}\n' > "${SIGNING}/no-version/godot-mcp-toolkit-1.2.0.update.json"
-sign_piped "${UNUSED_LINE}" "${SIGNING}/no-version/godot-mcp-toolkit-1.2.0.update.json" "${KEYS}/plain.pem" "${KEYS}/plain.pub.pem"
+sign_piped "${UNUSED_LINE}" "${SIGNING}/no-version/godot-mcp-toolkit-1.2.0.update.json" "${KEYS}/plain.pem"
 check "a version that is no version is refused" equals "${STATUS}" "1"
 check "the refusal says the version is the problem" contains "${OUT}" "no usable version"
 
-run bash "${SIGN}" --verify "${SIGNING}/plain/godot-mcp-toolkit-1.2.0.update.json" "${KEYS}/plain.pub.pem"
+run bash "${SIGN}" --verify "${SIGNING}/plain/godot-mcp-toolkit-1.2.0.update.json"
 check "--verify accepts the signed manifest" equals "${STATUS}" "0"
 sed 's/"archive_size": 3/"archive_size": 4/' "${SIGNING}/plain/godot-mcp-toolkit-1.2.0.update.json" > "${SIGNING}/plain/changed.tmp"
 mv "${SIGNING}/plain/changed.tmp" "${SIGNING}/plain/godot-mcp-toolkit-1.2.0.update.json"
-run bash "${SIGN}" --verify "${SIGNING}/plain/godot-mcp-toolkit-1.2.0.update.json" "${KEYS}/plain.pub.pem"
+run bash "${SIGN}" --verify "${SIGNING}/plain/godot-mcp-toolkit-1.2.0.update.json"
 check "--verify rejects a one-byte change" equals "$([[ "${STATUS}" -ne 0 ]] && echo failed || echo passed)" "failed"
 
-run bash "${SIGN}" --key-entry "${KEYS}/plain.pub.pem"
-ENTRY="${OUT}"
-check "--key-entry prints one line" equals "$(printf '%s\n' "${ENTRY}" | wc -l | tr -d ' ')" "1"
-check "--key-entry opens a quoted escaped PEM" contains "${ENTRY}" '"-----BEGIN PUBLIC KEY-----\n'
-check "--key-entry closes it" contains "${ENTRY}" '-----END PUBLIC KEY-----\n"'
-printf '%b' "$(printf '%s' "${ENTRY}" | tr -d '"')" > "${WORK}/entry.pem"
-tr -d '\r' < "${KEYS}/plain.pub.pem" > "${WORK}/plain.lf.pem"
-check "--key-entry unescapes to the key" same_bytes "${WORK}/entry.pem" "${WORK}/plain.lf.pem"
-run bash "${SIGN}" --key-entry "${KEYS}/ec.pub.pem"
-check "--key-entry refuses an EC key, which signing would refuse" equals "${STATUS}" "1"
-check "that refusal says RSA" contains "${OUT}" "not an RSA key"
-check "that refusal prints no key" lacks "${OUT}" "BEGIN PUBLIC KEY"
-run bash "${SIGN}" --key-entry "${WORK}/manifest.expected"
-check "--key-entry refuses a file that is no PEM key" equals "${STATUS}" "1"
-check "that refusal says so" contains "${OUT}" "not a PEM public key"
 run bash "${SIGN}" --help
 check "the usage does not say where keys live" lacks "${OUT}" "embedded_trust_document"
-check "the usage names the three-argument form" contains "${OUT}" "<manifest> <private-key.pem> <public-key.pem>"
-run bash "${SIGN}" "${SIGNING}/renamed/some-other-name.json" "${KEYS}/plain.pem"
-check "two arguments no longer sign" equals "${STATUS}" "2"
+check "the usage names the two-argument form" contains "${OUT}" "scripts/sign-release.sh <manifest> <private-key.pem>"
+check "the usage names no public key to pass" lacks "${OUT}" "<public-key.pem>"
+run bash "${SIGN}" "${SIGNING}/renamed/some-other-name.json" "${KEYS}/plain.pem" "${KEYS}/plain.pub.pem"
+check "a third argument is wrong usage" equals "${STATUS}" "2"
+run bash "${SIGN}" "${SIGNING}/renamed/some-other-name.json"
+check "a manifest with no key is wrong usage" equals "${STATUS}" "2"
+run bash "${SIGN}" "${SIGNING}/renamed/some-other-name.json" "${KEYS}/no-such-key.pem"
+check "a key file that is not there is refused" equals "${STATUS}" "1"
+check "that refusal says so" contains "${OUT}" "no key at"
+run bash "${SIGN}" --key-entry "${KEYS}/plain.pub.pem"
+check "--key-entry is not a command" equals "${STATUS}" "2"
+run bash "${SIGN}" --verify "${SIGNING}/renamed/some-other-name.json" "${KEYS}/plain.pub.pem"
+check "--verify takes no public key" equals "${STATUS}" "2"
+
+echo "── sign-release.sh: the trust document at the tag ──"
+run bash "${SIGN}" --verify "${SIGNING}/encrypted/godot-mcp-toolkit-1.2.0.update.json"
+check "--verify accepts a .sig by the document's second release key" equals "${STATUS}" "0"
+run bash "${SIGN}" --verify "${SIGNING}/wrong-pass/godot-mcp-toolkit-1.2.0.update.json"
+check "--verify with no .sig is refused" equals "${STATUS}" "1"
+check "that refusal says so" contains "${OUT}" "no signature at"
+
+# A signature by the unlisted key, made without the script, so --verify alone is what
+# refuses it.
+openssl dgst -sha256 -sign "${KEYS}/unlisted.pem" -out "${SIGNING}/unlisted/${SIG_NAME}" "${SIGNING}/unlisted/godot-mcp-toolkit-1.2.0.update.json" </dev/null
+run bash "${SIGN}" --verify "${SIGNING}/unlisted/godot-mcp-toolkit-1.2.0.update.json"
+check "--verify refuses a .sig by a key the document does not list" equals "${STATUS}" "1"
+check "that refusal names the document" contains "${OUT}" "none of the 2 release keys of trust-1.json at v1.2.0"
+
+# v1.2.1's newest document is trust-2, which dropped the plain key.
+make_versioned_case newer 1.2.1
+set_draft 42 "sha256:$(openssl_sha256 "${SIGNING}/newer/godot-mcp-toolkit-1.2.1.update.json")"
+sign_piped "${UNUSED_LINE}" "${SIGNING}/newer/godot-mcp-toolkit-1.2.1.update.json" "${KEYS}/plain.pem"
+check "a key the tag's newest document dropped is refused" equals "${STATUS}" "1"
+check "that refusal names the newest document" contains "${OUT}" "none of the 1 release keys of trust-2.json at v1.2.1"
+sign_piped "${PASSPHRASE}" "${SIGNING}/newer/godot-mcp-toolkit-1.2.1.update.json" "${KEYS}/encrypted.pem"
+check "the key that document keeps signs" equals "${STATUS}" "0"
+run bash "${SIGN}" --verify "${SIGNING}/renamed/some-other-name.json"
+check "an older release still verifies against the document at its own tag" equals "${STATUS}" "0"
+
+make_versioned_case no-document 1.1.0
+sign_piped "${UNUSED_LINE}" "${SIGNING}/no-document/godot-mcp-toolkit-1.1.0.update.json" "${KEYS}/plain.pem"
+check "a tag with no trust document is refused" equals "${STATUS}" "1"
+check "that refusal says so" contains "${OUT}" "holds no trust document"
+make_versioned_case no-tag 9.9.9
+sign_piped "${UNUSED_LINE}" "${SIGNING}/no-tag/godot-mcp-toolkit-9.9.9.update.json" "${KEYS}/plain.pem"
+check "a version with no tag is refused" equals "${STATUS}" "1"
+check "that refusal names the tag" contains "${OUT}" "no tag v9.9.9"
+
+echo "── sign-release.sh: the draft's digest ──"
+# Signs the case $1's manifest with the plain key, counting the reads of that key.
+sign_draft_case() {
+  make_signing_case "$1" "godot-mcp-toolkit-1.2.0.update.json"
+  rm -f "${OPENSSL_LOG}"
+  PATH="${WORK}/stub:${ORIGINAL_PATH}"
+  sign_piped "${UNUSED_LINE}" "${SIGNING}/$1/godot-mcp-toolkit-1.2.0.update.json" "${KEYS}/plain.pem"
+  PATH="${ORIGINAL_PATH}"
+}
+
+set_draft 42 "sha256:${HASH_HELLO}"
+sign_draft_case other-manifest
+check "a draft holding another manifest is refused" equals "${STATUS}" "1"
+check "that refusal shows the manifest's SHA-256" contains "${OUT}" "the manifest here       ${MANIFEST_DIGEST}"
+check "that refusal shows the draft's digest beside it" contains "${OUT}" "the draft's manifest    sha256:${HASH_HELLO}"
+check "that refusal comes before the private key is read" equals "$(private_key_reads "${KEYS}/plain.pem")" "0"
+check "that refusal leaves no .sig" no_file "${SIGNING}/other-manifest/${SIG_NAME}"
+
+set_draft "" "${MANIFEST_DIGEST}"
+sign_draft_case no-draft
+check "no draft for the tag is refused" equals "${STATUS}" "1"
+check "that refusal says so" contains "${OUT}" "no draft release for v1.2.0"
+check "that refusal comes before the private key is read" equals "$(private_key_reads "${KEYS}/plain.pem")" "0"
+
+set_draft $'41\n42' "${MANIFEST_DIGEST}"
+sign_draft_case two-drafts
+check "two drafts for the tag are refused" equals "${STATUS}" "1"
+check "that refusal says so" contains "${OUT}" "more than one draft release"
+
+set_draft 42 ""
+sign_draft_case no-digest
+check "a digest that stays empty is refused" equals "${STATUS}" "1"
+check "that refusal says so" contains "${OUT}" "reports no digest"
+check "the digest is read five times" equals "$(cat "${DRAFT}/reads")" "5"
+check "with four waits between the reads" equals "$(log_lines "${DRAFT}/sleep.log")" "4"
+check "that refusal comes before the private key is read" equals "$(private_key_reads "${KEYS}/plain.pem")" "0"
+
+set_draft 42 "" "" "${MANIFEST_DIGEST}"
+sign_draft_case late-digest
+check "a digest GitHub fills in late: signed" equals "${STATUS}" "0"
+check "after two waits" equals "$(log_lines "${DRAFT}/sleep.log")" "2"
+check "the .sig verifies with openssl directly" verifies "${KEYS}/plain.pub.pem" "${SIGNING}/late-digest/${SIG_NAME}" "${SIGNING}/late-digest/godot-mcp-toolkit-1.2.0.update.json"
+
+rm "${DRAFT}/ids"
+sign_draft_case gh-fails
+check "a failed read of GitHub is refused" equals "${STATUS}" "1"
+check "that refusal leaves no .sig" no_file "${SIGNING}/gh-fails/${SIG_NAME}"
+
+unset GIT_DIR GH_BIN
+PATH="${SYSTEM_PATH}"
 
 echo "── check_release_files.sh ──"
 CHECK="${REPO_ROOT}/scripts/check_release_files.sh"
