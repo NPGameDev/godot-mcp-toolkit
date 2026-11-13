@@ -480,6 +480,38 @@ mkdir -p "${HAND}/after-unknown"
 tool build "${HAND}/unknown-field.json" --out "${HAND}/after-unknown"
 check "a build from it warns the field is left out" contains "${OUT}" "leaves out pins"
 
+echo "── release-keys ──"
+tool release-keys
+check "release-keys with no document is wrong usage" equals "${STATUS}" "2"
+tool release-keys "${FIRST}"
+check "one release key prints as its PEM" equals "${OUT}" "$(tr -d '\r' < "${KEYS}/first_release.pub.pem")"
+tool release-keys "${WORK}/unsigned.json"
+check "an unsigned document prints its keys too" equals "${STATUS}" "0"
+mkdir -p "${HAND}/two-releases"
+tool build --first --add-root "${KEYS}/root.pub.pem" --add-release "${KEYS}/next_release.pub.pem" \
+  --add-release "${KEYS}/first_release.pub.pem" --out "${HAND}/two-releases"
+tool release-keys "${HAND}/two-releases/trust-1.json"
+check "two release keys print in the document's order" equals "${OUT}" "$(cat "${KEYS}/next_release.pub.pem" "${KEYS}/first_release.pub.pem" | tr -d '\r')"
+# A key written with CRLF line ends and none after its last line, which a block printed as
+# written would run into the next one.
+BARE_CRLF_JSON="$(printf '"%s"' "$(tr -d '\r' < "${KEYS}/root.pub.pem" | awk 'BEGIN { ORS = "" } NR > 1 { print "\\r\\n" } { print $0 }')")"
+make_file "${HAND}/layouts.json" "$(body_text 1 "${ROOT_JSON}" 1 "${BARE_CRLF_JSON}, ${FIRST_RELEASE_JSON}")" "${KEYS}/root.pem"
+tool release-keys "${HAND}/layouts.json"
+check "a key in another layout prints in the one layout" equals "${OUT}" "$(cat "${KEYS}/root.pub.pem" "${KEYS}/first_release.pub.pem" | tr -d '\r')"
+tool release-keys "${BUILT}/trust-2.json"
+check "a document with no release key prints nothing" equals "${STATUS}:${OUT}" "0:"
+make_file "${HAND}/bad-release.json" "$(body_text 1 "${ROOT_JSON}" 1 "${FIRST_RELEASE_JSON}, \"not a key\"")" "${KEYS}/root.pem"
+tool release-keys "${HAND}/bad-release.json"
+refused "a release key that does not load" "not a PEM public key"
+check "that refusal prints no key" lacks "${OUT}" "BEGIN PUBLIC KEY"
+# An EC key loads as a PEM public key, so only the RSA check keeps it out of the output.
+make_file "${HAND}/ec-release.json" "$(body_text 1 "${ROOT_JSON}" 1 "${FIRST_RELEASE_JSON}, $(key_json "${KEYS}/ec.pub.pem")")" "${KEYS}/root.pem"
+tool release-keys "${HAND}/ec-release.json"
+refused "an EC release key" "not an RSA key"
+check "that refusal prints no key either" lacks "${OUT}" "BEGIN PUBLIC KEY"
+tool release-keys "${HAND}/not-json.json"
+refused "release-keys on a file that is no document" "not a JSON object"
+
 echo "── trust/released-manifests.txt ──"
 LEDGER="${REPO_ROOT}/trust/released-manifests.txt"
 check "the ledger exists" is_file "${LEDGER}"

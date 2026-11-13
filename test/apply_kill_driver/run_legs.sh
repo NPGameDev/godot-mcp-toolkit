@@ -14,10 +14,11 @@
 # closed by a close request sent from inside it. The run grades what that left: the
 # plugin's notes, the journal and the folders on disk, never an exit code.
 #
-# Both versions are built by scripts/build-plugin-release.sh; B is signed by
-# scripts/sign-release.sh with a throwaway key, so staging runs a really built zip through
-# the name rules. Both embed a trust document naming that key, so each toolkit trusts the
-# release the run signed. A is this checkout's version; B is one patch newer. Each carries
+# Both versions are built by scripts/build-plugin-release.sh, so staging runs a really built
+# zip through the name rules. B is signed with a throwaway key by openssl itself, in the form
+# scripts/sign-release.sh writes: that script signs only a tagged release whose draft is on
+# GitHub. Both embed a trust document naming that key, so each toolkit trusts the release the
+# run signed. A is this checkout's version; B is one patch newer. Each carries
 # a file the other lacks, and A also gets a file by hand, the one a release never lists.
 #
 # Two more builds of B, signed the same way, are staged by the legs that need them: one
@@ -361,10 +362,11 @@ build_release() { # <version> <file only this version has> <out folder> <private
   rm -rf "$tree"
 }
 
-# sign-release.sh reads a passphrase line from a pipe even for a plain key.
+# The signature a release carries: RSA with SHA-256 over the manifest's bytes, written raw
+# beside it under the manifest's name plus .sig.
 sign_release() { # <out folder holding B's build>
-  echo unused | bash "$REPO_ROOT/scripts/sign-release.sh" \
-    "$1/godot-mcp-toolkit-$B_VERSION.update.json" "$RELEASE_KEY" "$RELEASE_PUBLIC_KEY" > /dev/null
+  local manifest="$1/godot-mcp-toolkit-$B_VERSION.update.json"
+  openssl dgst -sha256 -sign "$RELEASE_KEY" -out "$manifest.sig" "$manifest" < /dev/null
 }
 
 break_preloaded_file() { # <addon folder>
