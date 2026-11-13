@@ -18,6 +18,8 @@ const UpdateFixtures := preload("res://test/units/update_fixtures.gd")
 const TrustFixtures := preload("res://test/units/trust_fixtures.gd")
 
 const _VERSION := "1.9.0"
+# Where every file of that version's release downloads from.
+const _RELEASE_PATH := "/NPGameDev/godot-mcp-toolkit/releases/download/v1.9.0/"
 const _FRAME_LIMIT := 2400
 # A request reaches the listener well inside these, as the rows that do make one show.
 const _QUIET_FRAMES := 120
@@ -30,6 +32,7 @@ static func run(testing: Testing, tree: SceneTree) -> void:
 	# The installer's _ready runs only once the tree's root is live.
 	await tree.process_frame
 	await _test_walk_accepts_until_a_404(testing, tree)
+	await _test_document_outside_the_release(testing, tree)
 	await _test_no_request_when_nothing_is_newer(testing, tree)
 	await _test_no_request_with_an_empty_embedded_document(testing, tree)
 	await _test_timeout(testing, tree)
@@ -111,6 +114,14 @@ static func _names(server: UpdateFixtures.LoopbackReleaseServer) -> Array:
 	for path: String in server.paths():
 		names.append(path.get_file())
 	return names
+
+
+# The path of each request `server` got, in order.
+static func _paths(server: UpdateFixtures.LoopbackReleaseServer) -> Array:
+	var paths := []
+	for path: String in server.paths():
+		paths.append(path)
+	return paths
 
 
 # Starts the installer on `world` and measures a check that fails against `servers`: what it
@@ -268,8 +279,38 @@ static func _test_walk_accepts_until_a_404(testing: Testing, tree: SceneTree) ->
 	testing.ok(on_time, "the rotated key's release verifies in time")
 	testing.eq(_names(server), [_document_name(2), _document_name(3), ReleaseAssets.manifest_name(_VERSION),
 			ReleaseAssets.signature_name(_VERSION)], "the documents first, then the manifest and signature")
+	testing.eq(_paths(server).slice(0, 2), [_RELEASE_PATH + "trust-2.json", _RELEASE_PATH + "trust-3.json"],
+			"each document is asked of the release being verified")
 	testing.ok(stored, "the document reaches the store")
 	testing.eq(note, "", "and no note is left")
+	print("")
+
+
+# The embedded document lists the key that signed this release and document 2 lists only another,
+# so the release verifies only if the walk does not take that document.
+static func _test_document_outside_the_release(testing: Testing, tree: SceneTree) -> void:
+	testing.begin("Trust walk: a document hosted outside the release being verified is a 404, and the walk ends on the embedded keys")
+	var purposes := {"trust-2": "own_release", "v1.1.0": "other_version"}
+	for folder: String in purposes:
+		var assets := _release(UpdateFixtures.key())
+		assets[folder.path_join(_document_name(2))] = _document(2, [UpdateFixtures.other_key()])
+		var server := UpdateFixtures.LoopbackReleaseServer.new(assets)
+		var previous_host := UpdateFixtures.set_host(server.host())
+		var world := _world("outside_" + str(purposes[folder]))
+		var nodes := UpdateFixtures.start_world(world, tree)
+		var installer: UpdateInstaller = nodes["installer"]
+		var checked := func() -> bool: return installer.state() == "available" or installer.check_failed()
+		var on_time: bool = await _poll_until(checked, [server], tree)
+		var state := installer.state()
+		var stored := FileAccess.file_exists(str(world["scratch_store"]).path_join(_document_name(2)))
+		_end(world, nodes)
+		server.stop()
+		UpdateFixtures.restore_host(previous_host)
+		testing.ok(on_time, "hosted under %s/ → the check ends in time" % folder)
+		testing.eq(_paths(server).slice(0, 1), [_RELEASE_PATH + "trust-2.json"],
+				"hosted under %s/ → the walk asks the release being verified" % folder)
+		testing.eq(state, "available", "hosted under %s/ → the release the embedded key signed verifies" % folder)
+		testing.ok(not stored, "hosted under %s/ → nothing reaches the store" % folder)
 	print("")
 
 

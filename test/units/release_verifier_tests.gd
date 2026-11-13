@@ -1,8 +1,9 @@
 @tool
 extends RefCounted
 ## Unit tests for release_verifier.gd through its methods and signals, against a loopback
-## listener: a walk that ends trusted and the verify after it, each step that fails and the kind
-## it fails with, a walk that cannot start, and a cancelled fetch.
+## listener: a walk that ends trusted and the verify after it, the release a walk asks for its
+## documents, each step that fails and the kind it fails with, a walk that cannot start, and a
+## cancelled fetch.
 
 const Testing := preload("res://test/units/testing.gd")
 const ReleaseVerifier := preload("res://addons/godot_mcp_toolkit/self_update/release_verifier.gd")
@@ -11,6 +12,8 @@ const UpdateFixtures := preload("res://test/units/update_fixtures.gd")
 const TrustFixtures := preload("res://test/units/trust_fixtures.gd")
 
 const _VERSION := "1.9.0"
+# Where every file of that version's release downloads from.
+const _RELEASE_PATH := "/NPGameDev/godot-mcp-toolkit/releases/download/v1.9.0/"
 const _FRAME_LIMIT := 2400
 # A request reaches the listener well inside these, as the rows that do make one show.
 const _QUIET_FRAMES := 120
@@ -22,6 +25,7 @@ static func run(testing: Testing, tree: SceneTree) -> void:
 	# The verifier's _ready runs only once the tree's root is live.
 	await tree.process_frame
 	await _test_walk_then_verify(testing, tree)
+	await _test_document_outside_the_release(testing, tree)
 	await _test_refused_document(testing, tree)
 	await _test_walk_to_no_release_key(testing, tree)
 	await _test_no_data_folder(testing, tree)
@@ -121,6 +125,14 @@ static func _asked(server: UpdateFixtures.LoopbackReleaseServer) -> Array:
 	return names
 
 
+# The path of each request `server` got, in order.
+static func _paths(server: UpdateFixtures.LoopbackReleaseServer) -> Array:
+	var paths := []
+	for path: String in server.paths():
+		paths.append(path)
+	return paths
+
+
 # Whether the one HTTPRequest under `verifier` has closed its connection, as a cancelled
 # request does.
 static func _connection_closed(verifier: ReleaseVerifier) -> bool:
@@ -139,16 +151,16 @@ static func _end(verifier: ReleaseVerifier, server: UpdateFixtures.LoopbackRelea
 	UpdateFixtures.remove(UpdateFixtures.scratch("verifier_" + purpose + "_trust"))
 
 
-# Walks, then fetches `_VERSION` once the walk ends in walked. Returns the events recorded, what
-# the listener was asked for, whether each step ended in time, and whether the walk stored
-# trust document 2.
+# Walks for `_VERSION`, then fetches it once the walk ends in walked. Returns the events
+# recorded, what the listener was asked for by file name and by path, whether each step ended in
+# time, and whether the walk stored trust document 2.
 static func _measure_walk_and_fetch(
 		purpose: String, assets: Dictionary, tree: SceneTree) -> Dictionary:
 	var server := UpdateFixtures.LoopbackReleaseServer.new(assets)
 	var previous_host := UpdateFixtures.set_host(server.host())
 	var verifier := _start(purpose, tree)
 	var events := _record(verifier)
-	verifier.walk()
+	verifier.walk(_VERSION)
 	var measured := {
 		"walk_on_time": await _poll_until_ended(events, server, tree),
 		"fetch_on_time": true,
@@ -159,6 +171,7 @@ static func _measure_walk_and_fetch(
 	var store := UpdateFixtures.scratch("verifier_" + purpose + "_trust")
 	measured["stored"] = FileAccess.file_exists(store.path_join(_document_name(2)))
 	measured["asked"] = _asked(server)
+	measured["paths"] = _paths(server)
 	_end(verifier, server, previous_host, purpose)
 	measured["events"] = events
 	return measured
@@ -179,6 +192,9 @@ static func _test_walk_then_verify(testing: Testing, tree: SceneTree) -> void:
 	testing.eq(measured["asked"], [_document_name(2), _document_name(3),
 			ReleaseAssets.manifest_name(_VERSION), ReleaseAssets.signature_name(_VERSION)],
 			"the documents first, then the manifest and signature")
+	var paths: Array = measured["paths"]
+	testing.eq(paths.slice(0, 2), [_RELEASE_PATH + "trust-2.json", _RELEASE_PATH + "trust-3.json"],
+			"each document is asked of the release being verified")
 	testing.ok(measured["stored"], "the document the walk took reaches the store")
 	if _names_of(events) == ["walked", "manifest_received", "verified"]:
 		var manifest_bytes: PackedByteArray = assets[ReleaseAssets.manifest_name(_VERSION)]
@@ -188,6 +204,32 @@ static func _test_walk_then_verify(testing: Testing, tree: SceneTree) -> void:
 		testing.eq(manifest.get("version"), "1.9.0", "for the version fetched")
 		testing.eq(events[2][2], assets[ReleaseAssets.signature_name(_VERSION)],
 				"and the signature's bytes")
+	print("")
+
+
+# The embedded document lists the key that signed this release and document 2 lists only another,
+# so the release verifies only if the walk does not take that document.
+static func _test_document_outside_the_release(testing: Testing, tree: SceneTree) -> void:
+	testing.begin("Release verifier: a document hosted outside the release being verified is a "
+			+ "404, and the walk ends on the embedded keys")
+	var purposes := {"trust-2": "own_release", "v1.8.0": "other_version"}
+	for folder: String in purposes:
+		var assets := _release(UpdateFixtures.key())
+		assets[folder.path_join(_document_name(2))] = _document(2, [UpdateFixtures.other_key()])
+		var measured: Dictionary = await _measure_walk_and_fetch(
+				"outside_" + str(purposes[folder]), assets, tree)
+		var events: Array = measured["events"]
+		var paths: Array = measured["paths"]
+		testing.ok(measured["walk_on_time"] and measured["fetch_on_time"],
+				"hosted under %s/ → the walk and the fetch end in time" % folder)
+		testing.eq(paths.slice(0, 1), [_RELEASE_PATH + "trust-2.json"],
+				"hosted under %s/ → the walk asks the release being verified" % folder)
+		testing.eq(measured["asked"], [_document_name(2),
+				ReleaseAssets.manifest_name(_VERSION), ReleaseAssets.signature_name(_VERSION)],
+				"hosted under %s/ → one document asked, then the manifest and signature" % folder)
+		testing.eq(_names_of(events), ["walked", "manifest_received", "verified"],
+				"hosted under %s/ → the release the embedded key signed verifies" % folder)
+		testing.ok(not measured["stored"], "hosted under %s/ → nothing reaches the store" % folder)
 	print("")
 
 
@@ -230,7 +272,7 @@ static func _test_no_data_folder(testing: Testing, tree: SceneTree) -> void:
 	var previous_host := UpdateFixtures.set_host(server.host())
 	var verifier := _start("no_store", tree, ".")
 	var events := _record(verifier)
-	verifier.walk()
+	verifier.walk(_VERSION)
 	var at_call := _names_of(events)
 	var kind := _failed_kind(events, 0)
 	await _poll_frames(server, tree)

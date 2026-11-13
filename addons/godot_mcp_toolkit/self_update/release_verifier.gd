@@ -3,14 +3,15 @@ extends Node
 ## Fetches what proves a release trusted: the trust documents this machine lacks, then the
 ## release's manifest and its signature.
 ##
-## [method walk] fetches the trust documents one at a time, until a 404 or the chain's cap for
-## one walk, and emits [signal walked] once the latest document lists a release key.
+## [method walk] fetches the trust documents one at a time from the release it is to verify,
+## until a 404 or the chain's cap for one walk, and emits [signal walked] once the latest
+## document lists a release key.
 ## [method fetch] then fetches the manifest and its signature, and emits [signal verified]
 ## when a key the walked chain lists signed it and the manifest parses. A step that fails
 ## emits [signal failed] and ends the run. One run goes at a time, and [method cancel] stops it
 ## with no signal.[br]
 ## [br]
-## Every URL is built from a document number or the version (see
+## Every URL is built from the version, and a trust document's from its number too (see
 ## [code]release_assets.gd[/code]), and a reply can redirect it only to the hosts
 ## [code]update_downloader.gd[/code] allows.
 
@@ -79,8 +80,10 @@ func store() -> String:
 	return _walk.store() if _walk != null else ""
 
 
-## Starts a walk of the trust chain from the documents this machine holds.
-func walk() -> void:
+## Starts a walk of the trust chain from the documents this machine holds, fetching the
+## ones it lacks from the release of [param version], the release to verify.
+func walk(version: String) -> void:
+	_version = version
 	_walk = ReleaseSignature.chain(_options)
 	if not _walk.has_store():
 		failed.emit(UpdateCheckFailure.NO_DATA_FOLDER, "the data folder is not an absolute path")
@@ -107,7 +110,7 @@ func _fetch_next_document() -> void:
 	if number == 0:
 		_end_walk()
 		return
-	var url := ReleaseAssets.trust_document_url(OS.get_environment(UpdateCheck.HOST_ENV), number)
+	var url := ReleaseAssets.trust_document_url(OS.get_environment(UpdateCheck.HOST_ENV), _version, number)
 	if _downloader.fetch(url, TrustChain.MAX_FILE_BYTES, _timeout_sec) != OK:
 		failed.emit(UpdateCheckFailure.UNREACHABLE, "the fetch of trust document %d could not start" % number)
 		return
