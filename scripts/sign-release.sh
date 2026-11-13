@@ -11,22 +11,26 @@
 # Usage:
 #   scripts/sign-release.sh <tag> <zip> <private-key.pem>
 #       sign the manifest of <zip> at <tag>, from a fresh clone of the repository's main
-#       branch. It copies <zip> first and reads nothing else it is handed but the key. It
-#       refuses, in this order, when: GH_REPO, GH_HOST, GIT_DIR, GIT_WORK_TREE or
-#       NODE_OPTIONS is set; origin is not the URL pinned in
-#       scripts/lib/release_identity.sh; the checkout has changes or is not at the tip of
-#       origin's main; origin's <tag> is not this checkout's; the tag's commit is not on
-#       origin's main; the tag's trust documents are not the pinned first one and a chain
-#       that verifies, or the toolkit at the tag does not hold the last; or
+#       branch. It first checks its arguments and the folder the signature goes to, then
+#       copies <zip>; it reads nothing else it is handed but the key. After that it
+#       refuses, in this order, when: a variable that aims git, gh, node or openssl
+#       elsewhere is set (scripts/lib/release_checks.sh lists them); origin is not the URL
+#       pinned in scripts/lib/release_identity.sh; the checkout has changes or is not at
+#       the tip of origin's main; origin's <tag> is not this checkout's; the tag's commit
+#       is not on origin's main; the tag's trust documents are not the pinned first one
+#       and a chain that verifies, or the toolkit at the tag does not hold the last; or
 #       scripts/check-release-zip.mjs does not accept the copy for the tag. It then writes
-#       the manifest itself, from the copy and the tag, and shows the tag, its commit and
-#       what changed since the release before. Type the first 8 hex digits of the commit
-#       as github.com shows them: anything else is refused. It asks for the key's
-#       passphrase, signs, and keeps the signature only if a release key of the tag's
-#       highest trust document verifies it. A non-RSA key is refused.
+#       the manifest itself, from the copy and the tag, and shows the tag, its commit's
+#       subject, the release before and what changed since, but not the commit: it names
+#       the tag's page on github.com, and takes the first 8 hex digits of the commit shown
+#       there. Anything else typed is refused, and so is a tag whose own commit carries
+#       the release tag before it. It asks for the key's passphrase, signs, and keeps the
+#       signature only if a release key of the tag's highest trust document verifies it.
+#       A non-RSA key is refused.
 #       The manifest and its .sig go to a new folder under /Users/Shared, readable from
-#       every account; SIGN_RELEASE_OUT_ROOT names another parent folder. The last line
-#       printed is "OUT <folder>". A refusal leaves no folder.
+#       every account; SIGN_RELEASE_OUT_ROOT names another parent folder, which must be
+#       this account's own or root's with the sticky bit set. The last line printed is
+#       "OUT <folder>". A refusal leaves no folder.
 #       With stdin a pipe, its one line is the passphrase, and the 8 hex digits are read
 #       from file descriptor 3 if it is open, else from the terminal.
 #   scripts/sign-release.sh --verify <manifest>
@@ -99,10 +103,17 @@ verifies_under_a_release_key() {
   return 1
 }
 
-# Drops the control characters of the text on stdin but the tab and the line break, so a
-# commit's subject or a file's name cannot drive the terminal it is shown on.
-printable() {
-  tr -d '\000-\010\013-\037\177'
+# Whether a signature may be left in the folder $1: one that is this account's own and
+# that no other account may write to, or one of root's or this account's with the sticky
+# bit set, as /Users/Shared is. In any other folder an account other than this one and
+# root could rename or replace what signing leaves there.
+out_root_is_safe() {
+  local mode owner me
+  me="$(id -u)"
+  read -r mode _ owner _ < <(ls -ldn -- "$1/.") || return 1
+  [[ "${owner}" == "${me}" || "${owner}" == "0" ]] || return 1
+  [[ "${mode:9:1}" != [tT] ]] || return 0
+  [[ "${owner}" == "${me}" && "${mode:5:1}" != "w" && "${mode:8:1}" != "w" ]]
 }
 
 # Whether the release tag $1 is a lower version than the release tag $2. The three numbers
@@ -124,12 +135,13 @@ is_lower_release() {
   return 1
 }
 
-# Shows what signing the tag $1 would release, then takes the first 8 hex digits of its
-# commit from the maintainer, who reads them on github.com. This checkout and origin
-# already agree on the tag; the typed digits tie both to what the website shows a person.
-# Needs rc_check_tag.
+# Shows what signing the tag $1 would release, but not its commit, then takes the commit's
+# first 8 hex digits from whoever runs this. A match shows that they had those digits from
+# somewhere other than this output. The tag's page on github.com is named as the place to
+# read them; nothing here can check that it was the place. Needs rc_check_tag.
 confirm_commit() {
-  local tag="$1" name previous="" base range since count typed=""
+  local tag="$1" name previous="" previous_commit previous_date before base range since count typed=""
+  local page="https://github.com/${RELEASE_SLUG}/releases/tag/${tag}"
   # The release before is the highest release tag the commit reaches whose version is
   # lower than this tag's. A tag of a higher version can sit on the same commit or on an
   # earlier one, and is no release before this one.
@@ -144,26 +156,40 @@ confirm_commit() {
     base="refs/tags/${previous}"
     range="${base}..${RC_COMMIT}"
     since="since ${previous}"
+    previous_commit="$(git -C "${REPO_ROOT}" rev-parse -q --verify "${base}^{commit}" | tr -d '\r')" \
+      || refuse "could not read the commit of ${previous}."
+    # A lower release tag on the tag's own commit leaves the comparison below empty, and
+    # whoever can push a tag can put one there.
+    [[ "${previous_commit}" != "${RC_COMMIT}" ]] \
+      || refuse "${previous}, the release tag before ${tag}, is on the commit of ${tag} itself, so nothing would show what ${tag} changes."
+    previous_date="$(git --no-pager -C "${REPO_ROOT}" log -1 --no-color --format=%cI "${previous_commit}" | tr -d '\r')" \
+      || refuse "could not read the commit of ${previous}."
+    before="${previous} ${previous_commit} ${previous_date}"
   else
     # No release before this one: everything the commit holds is new, so the comparison
     # is with the empty tree.
     base="$(git -C "${REPO_ROOT}" hash-object -t tree --stdin < /dev/null | tr -d '\r')"
     range="${RC_COMMIT}"
     since="with no release tag before it"
+    before="no release tag"
   fi
   count="$(git -C "${REPO_ROOT}" rev-list --count "${range}" | tr -d '\r')" \
     || refuse "could not read the history of ${tag}."
   echo "Tag      ${tag}"
-  echo "Commit   ${RC_COMMIT}"
-  echo "Subject  $(git --no-pager -C "${REPO_ROOT}" log -1 --no-color --format=%s "${RC_COMMIT}" | printable)"
+  echo "Subject  $(git --no-pager -C "${REPO_ROOT}" log -1 --no-color --format=%s "${RC_COMMIT}" | rc_printable)"
+  # The release before, with its commit and that commit's date: a tag planted close below
+  # this one would shorten the list that follows, and shows here as a recent commit.
+  echo "Before   ${before}"
   echo "Commits ${since} (${count}):"
-  git --no-pager -C "${REPO_ROOT}" log --no-color --format='  %h %s' "${range}" | printable \
+  # Subjects only: a commit's short name here would hand over the digits asked for below.
+  git --no-pager -C "${REPO_ROOT}" log --no-color --format='  %s' "${range}" | rc_printable \
     || refuse "could not read the history of ${tag}."
   echo "Changes under scripts/ and trust/ ${since}:"
-  git --no-pager -C "${REPO_ROOT}" diff --no-color --no-ext-diff --stat "${base}" "${RC_COMMIT}" -- scripts/ trust/ | printable \
+  git --no-pager -C "${REPO_ROOT}" diff --no-color --no-ext-diff --stat "${base}" "${RC_COMMIT}" -- scripts/ trust/ | rc_printable \
     || refuse "could not compare ${tag} with the release before it."
+  echo "Commit   not shown here: open ${page} and follow its commit link."
 
-  local prompt="First 8 hex digits of the commit of ${tag}, as github.com shows them: "
+  local prompt="First 8 hex digits of the commit shown there: "
   if [[ -t 0 ]]; then
     IFS= read -r -p "${prompt}" typed || true
   elif { true <&3; } 2>/dev/null; then
@@ -177,6 +203,7 @@ confirm_commit() {
   typed="${typed%$'\r'}"
   [[ "${typed}" == "${RC_COMMIT:0:8}" ]] \
     || refuse "what was typed is not the first 8 hex digits of the commit of ${tag}; nothing is signed."
+  echo "Commit   ${RC_COMMIT}"
 }
 
 verify_manifest() {
@@ -204,6 +231,8 @@ sign_release() {
   command -v node >/dev/null 2>&1 || { echo "error: node is required to sign." >&2; exit 2; }
   [[ -d "${out_root}" ]] \
     || { echo "error: no folder at ${out_root} to leave the signature in; SIGN_RELEASE_OUT_ROOT names another." >&2; exit 2; }
+  out_root_is_safe "${out_root}" \
+    || refuse "${out_root} is neither this account's own and closed to other accounts nor root's or this account's with the sticky bit set; a signature is left in no other folder."
 
   # The zip arrives through a folder other accounts write to, so every check and the
   # manifest read this private copy. The copy's name is the release's own: the manifest

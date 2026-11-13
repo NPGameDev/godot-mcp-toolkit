@@ -9,8 +9,10 @@
 # "refused: <reason>" line on stderr and returns 1. None exits, so the caller decides what
 # a refusal ends.
 #
-#   rc_check_environment          refuse while a variable that aims git, gh or node
-#                                 elsewhere is set, even to nothing
+#   rc_printable                  filter: each byte that is not printable ASCII or a line
+#                                 break becomes "?"
+#   rc_check_environment          refuse while a variable in RC_REFUSED_VARIABLES is set,
+#                                 even to nothing
 #   rc_check_origin               refuse unless origin is RELEASE_ORIGIN_URL
 #   rc_check_head                 refuse a checkout with changed or untracked files, or
 #                                 one not at the tip of origin's RELEASE_BRANCH; sets
@@ -44,9 +46,28 @@ RC_OBJECT_NAME='^[0-9a-f]{40,64}$'
 RC_TRUST_DOCUMENT_PATH='^trust/trust-([1-9][0-9]{0,8})\.json$'
 RC_EMBEDDED_FILE="addons/godot_mcp_toolkit/self_update/embedded_trust_document.gd"
 RC_EMBEDDED_MARKER="const DOCUMENT := "
+# The variables that aim gh, node, openssl or git at another repository, host,
+# configuration, history, certificate or program. No list of names is complete, so a
+# caller that must be sure starts a release script from an empty environment (env -i);
+# this list refuses what that would have dropped.
+RC_REFUSED_VARIABLES=(
+  GH_REPO GH_HOST NODE_OPTIONS NODE_PATH OPENSSL_CONF SSL_CERT_FILE SSL_CERT_DIR
+  GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR GIT_INDEX_FILE GIT_OBJECT_DIRECTORY
+  GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_CONFIG GIT_CONFIG_COUNT GIT_CONFIG_GLOBAL
+  GIT_CONFIG_SYSTEM GIT_CONFIG_PARAMETERS GIT_EXEC_PATH GIT_SSL_NO_VERIFY GIT_SSL_CAINFO
+  GIT_SSL_CAPATH GIT_SSH_COMMAND GIT_PROXY_COMMAND GIT_GRAFT_FILE GIT_SHALLOW_FILE
+  GIT_REPLACE_REF_BASE
+)
 
 rc_refuse() {
   echo "refused: $*" >&2
+}
+
+# Replaces with "?" each byte of the text on stdin that is not printable ASCII or a line
+# break, so a commit's subject, a file's name or a tool's output cannot drive the terminal
+# it is shown on. LC_ALL=C has tr take the input byte by byte, whatever the locale.
+rc_printable() {
+  LC_ALL=C tr -c '\n\040-\176' '?'
 }
 
 # Prints the object name the listing $1, git ls-remote's answer, gives the ref $2. git
@@ -63,9 +84,9 @@ rc_reason() {
 
 rc_check_environment() {
   local name
-  for name in GH_REPO GH_HOST GIT_DIR GIT_WORK_TREE NODE_OPTIONS; do
+  for name in "${RC_REFUSED_VARIABLES[@]}"; do
     if declare -p "${name}" >/dev/null 2>&1; then
-      rc_refuse "${name} is set; a release is checked with none of GH_REPO, GH_HOST, GIT_DIR, GIT_WORK_TREE and NODE_OPTIONS."
+      rc_refuse "${name} is set; a release is checked with none of these set: ${RC_REFUSED_VARIABLES[*]}."
       return 1
     fi
   done
@@ -141,7 +162,7 @@ rc_check_trust() {
   local tag="$1" dir="$2" ref="refs/tags/$1" path number count=0 highest=0 hash output embedded literal
   RC_TRUST_N=""
   if ! git -C "${REPO_ROOT}" rev-parse -q --verify "${ref}^{commit}" >/dev/null 2>&1; then
-    rc_refuse "this checkout has no tag ${tag}."
+    rc_refuse "there is no tag ${tag} to read trust documents from."
     return 1
   fi
   while IFS= read -r path; do
@@ -217,8 +238,10 @@ rc_check_zip() {
   fi
   zip="${folder}/$(basename "${zip}")"
   # The check reads the tag through git in its working directory. A caller's stdin may
-  # hold a passphrase, so node gets none of it.
-  if ! (cd "${REPO_ROOT}" && node "${REPO_ROOT}/scripts/check-release-zip.mjs" "${zip}" "${tag}" < /dev/null) >&2; then
+  # hold a passphrase, so node gets none of it. The zip names its own entries, so what the
+  # check prints is filtered; pipefail is set here because the filter's status would
+  # otherwise stand for the check's.
+  if ! (set -o pipefail; cd "${REPO_ROOT}" && node "${REPO_ROOT}/scripts/check-release-zip.mjs" "${zip}" "${tag}" < /dev/null 2>&1 | rc_printable >&2); then
     rc_refuse "scripts/check-release-zip.mjs does not accept $(basename "${zip}") for ${tag}."
     return 1
   fi

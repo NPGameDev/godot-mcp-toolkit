@@ -8,9 +8,10 @@
 #     time refused, the list and manifest pinned, the .ps1 matching them and ASCII; the
 #     bash build also refusing an unreadable Godot floor or server pin;
 #   - scripts/sign-release.sh as a copy inside a tagged repo made here, with a bare repo
-#     as its origin, its own release identity and stand-ins for node and gh: plain,
-#     encrypted, unlisted and non-RSA keys, each check signing refuses on, the folder a
-#     signature is left in, and --verify against the trust documents at the tag;
+#     as its origin, its own release identity and stand-ins for node, gh and ls: plain,
+#     encrypted, unlisted and non-RSA keys, each check signing refuses on, what it shows
+#     before it asks for the commit's digits, the folder a signature is left in, and
+#     --verify against the trust documents at the tag;
 #   - scripts/check_release_files.sh's failures, on real zips.
 #
 # The real builds need zip, unzip and pwsh, the check's cases need zip and unzip, and the
@@ -457,22 +458,41 @@ sign_git tag -d v1.7.0 >/dev/null
 sign_git tag -a -m v1.5.0 v1.5.0 "$(commit_of v1.3.5)"
 
 # Stand-ins on the PATH for the tools signing could reach: a node that logs where and how
-# it was run and accepts the zip unless the file ${NODE_REFUSES} exists, and a gh that
-# only logs, because signing must never run it.
+# it was run, prints what the file ${NODE_SAYS} holds when there is one, on stdout and
+# again on stderr behind "on stderr: ", and accepts the zip unless the file
+# ${NODE_REFUSES} exists; a gh that only logs, because signing must never run it; and an
+# ls that answers for a folder's owner and mode with what the file ${LS_SAYS} holds when
+# there is one, since no test can make a folder another account owns.
 export NODE_LOG="${WORK}/node.log"
+export NODE_SAYS="${WORK}/node-says"
 export NODE_REFUSES="${WORK}/node-refuses"
 export GH_LOG="${WORK}/gh.log"
+export LS_SAYS="${WORK}/ls-says"
+REAL_LS="$(command -v ls)"
+export REAL_LS
 mkdir -p "${WORK}/stub"
 cat > "${WORK}/stub/node" <<'STUB'
 #!/usr/bin/env bash
 printf '%s|%s\n' "$(pwd)" "$*" >> "${NODE_LOG}"
+if [[ -f "${NODE_SAYS}" ]]; then
+  cat "${NODE_SAYS}"
+  sed 's/^/on stderr: /' "${NODE_SAYS}" >&2
+fi
 [[ ! -e "${NODE_REFUSES}" ]]
 STUB
 cat > "${WORK}/stub/gh" <<'STUB'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "${GH_LOG}"
 STUB
-chmod +x "${WORK}/stub/node" "${WORK}/stub/gh"
+cat > "${WORK}/stub/ls" <<'STUB'
+#!/usr/bin/env bash
+if [[ -f "${LS_SAYS}" && "${1:-}" == "-ldn" ]]; then
+  cat "${LS_SAYS}"
+else
+  exec "${REAL_LS}" "$@"
+fi
+STUB
+chmod +x "${WORK}/stub/node" "${WORK}/stub/gh" "${WORK}/stub/ls"
 
 # An openssl on the PATH that logs each call before running the real one.
 REAL_OPENSSL="$(command -v openssl)"
@@ -578,6 +598,7 @@ check "plain key: its commit is shown in full" contains "${OUT}" "Commit   $(com
 check "plain key: the commit's subject is shown" contains "${OUT}" "Subject  v1.2.0"
 check "plain key: the commits since the release before are counted" contains "${OUT}" "Commits since v1.1.0 (1):"
 check "plain key: what changed under trust/ since then is shown" contains "${OUT}" "trust/trust-1.json"
+check "plain key: the release before is shown with its commit and that commit's date" contains "${OUT}" "Before   v1.1.0 $(commit_of v1.1.0) 2023-11-14T22:13:20+00:00"
 sign_verify "${PLAIN_OUT}/${MANIFEST_NAME}"
 check "--verify accepts the signed manifest" equals "${STATUS}" "0"
 
@@ -621,7 +642,24 @@ for name in GH_REPO GH_HOST GIT_DIR GIT_WORK_TREE NODE_OPTIONS; do
   sign_piped "${UNUSED_LINE}" "${NEVER_READ}" v1.2.0 "${ZIP}" "${KEYS}/plain.pem"
   sign_refused "check 1, ${name} is set" "${name} is set"
 done
+# The other variables check 1 refuses: two with every check of a refusal, then one run
+# each for the rest.
+for name in GIT_CONFIG_GLOBAL OPENSSL_CONF; do
+  SIGN_ENV=("${name}=")
+  sign_piped "${UNUSED_LINE}" "${NEVER_READ}" v1.2.0 "${ZIP}" "${KEYS}/plain.pem"
+  sign_refused "check 1, ${name} is set" "${name} is set"
+done
+NOT_REFUSED=""
+for name in GIT_COMMON_DIR GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_CONFIG \
+  GIT_CONFIG_COUNT GIT_CONFIG_SYSTEM GIT_CONFIG_PARAMETERS GIT_EXEC_PATH GIT_SSL_NO_VERIFY GIT_SSH_COMMAND \
+  GIT_PROXY_COMMAND GIT_SSL_CAINFO GIT_SSL_CAPATH GIT_GRAFT_FILE GIT_SHALLOW_FILE GIT_REPLACE_REF_BASE \
+  NODE_PATH SSL_CERT_FILE SSL_CERT_DIR; do
+  SIGN_ENV=("${name}=")
+  sign_piped "${UNUSED_LINE}" "${NEVER_READ}" v1.2.0 "${ZIP}" "${KEYS}/plain.pem"
+  [[ "${STATUS}" == "1" && "${OUT}" == *"refused: ${name} is set"* ]] || NOT_REFUSED+="${name} "
+done
 SIGN_ENV=()
+check "check 1, each other variable that aims git elsewhere is refused" equals "${NOT_REFUSED}" ""
 
 # A full copy of origin under another path: only the pinned URL tells them apart.
 cp -R "${WORK}/origin.git" "${WORK}/elsewhere.git"
@@ -679,6 +717,8 @@ sign_piped "${UNUSED_LINE}" "0000000g" v1.2.0 "${ZIP}" "${KEYS}/plain.pem"
 sign_refused "check 9, other digits than the commit's" "not the first 8 hex digits of the commit of v1.2.0"
 check "check 9, other digits than the commit's: what was typed is not shown" lacks "${OUT}" "0000000g"
 EIGHT_DIGITS="$(typed_for v1.2.0)"
+check "check 9, other digits than the commit's: the commit's own digits are not shown" lacks "${OUT}" "${EIGHT_DIGITS}"
+check "check 9: the page to read the commit on is named" contains "${OUT}" "open https://github.com/fixture/sign-repo/releases/tag/v1.2.0 and follow its commit link"
 sign_piped "${UNUSED_LINE}" "${EIGHT_DIGITS:0:7}" v1.2.0 "${ZIP}" "${KEYS}/plain.pem"
 sign_refused "check 9, seven of the eight digits" "not the first 8 hex digits of the commit of v1.2.0"
 sign_piped "${UNUSED_LINE}" "" v1.2.0 "${ZIP}" "${KEYS}/plain.pem"
@@ -778,9 +818,84 @@ make_versioned_case other-embedded 1.3.4
 sign_directly "${SIGNING}/other-embedded/godot-mcp-toolkit-1.3.4.update.json" "${KEYS}/encrypted.pem"
 sign_verify "${SIGNING}/other-embedded/godot-mcp-toolkit-1.3.4.update.json"
 check "--verify refuses when the toolkit at the tag embeds another document" equals "${STATUS}" "1"
+check "that refusal names the document the toolkit should embed" contains "${OUT}" "does not embed trust-2.json"
 run env TMPDIR="${SIGN_TMP}" GIT_DIR="${SIGN_REPO}/.git" bash "${SIGN}" --verify "${PLAIN_OUT}/${MANIFEST_NAME}"
 check "--verify refuses while GIT_DIR is set" equals "${STATUS}" "1"
 check "that refusal names the variable" contains "${OUT}" "GIT_DIR is set"
+
+echo "── sign-release.sh: what is shown, and where a signature is left ──"
+# More states, made and pushed only here so that no run above meets them. v1.3.6 gives
+# back the Godot floor v1.3.5 took, in a commit whose subject holds an escape sequence and
+# a two-byte character; the subject goes in through a file, as bytes. v1.3.8 has the
+# release tag before it, v1.3.7, on its own commit. v1.0.0 sits on the commit of v1.2.0,
+# which no release tag of a lower version reaches.
+printf 'const GODOT_MIN_VERSION := "4.2"\nconst COMPATIBLE_SERVER_VERSION := "1.3.0"\n' > "${SIGN_REPO}/${CONSTANT_FILE}"
+printf 'a subject \033[2J with \303\251 in it\n' > "${WORK}/subject"
+sign_git add -A .
+sign_git commit -q -F "${WORK}/subject"
+sign_git tag -a -m v1.3.6 v1.3.6
+tag_state v1.3.8
+sign_git tag -a -m v1.3.7 v1.3.7 "$(commit_of v1.3.8)"
+sign_git tag -a -m v1.0.0 v1.0.0 "$(commit_of v1.2.0)"
+sign_git push -q origin main refs/tags/v1.3.6 refs/tags/v1.3.7 refs/tags/v1.3.8 refs/tags/v1.0.0
+
+sign_piped "${PASSPHRASE}" "$(typed_for v1.3.6)" v1.3.6 "${ZIP}" "${KEYS}/encrypted.pem"
+SHARED_KEPT=4
+check "a subject with an escape sequence: signed" equals "${STATUS}" "0"
+check "the subject is shown with a question mark for each byte that is not printable ASCII" contains "${OUT}" "Subject  a subject ?[2J with ?? in it"
+check "and so is its line in the list of commits, which carries no commit's name" contains "${OUT}" "Commits since v1.3.5 (1):"$'\n'"  a subject ?[2J with ?? in it"
+check "no escape reaches the terminal from a subject" lacks "${OUT}" $'\033'
+
+printf 'an entry \033[2J the zip names\n' > "${NODE_SAYS}"
+sign_piped "${UNUSED_LINE}" "$(typed_for v1.2.0)" v1.2.0 "${ZIP}" "${KEYS}/plain.pem"
+rm "${NODE_SAYS}"
+SHARED_KEPT=5
+check "a zip check that prints an escape sequence: signed" equals "${STATUS}" "0"
+check "what the zip check prints is shown with a question mark for the escape" contains "${OUT}" "an entry ?[2J the zip names"
+check "and so is what it prints on stderr" contains "${OUT}" "on stderr: an entry ?[2J the zip names"
+check "no escape reaches the terminal from the zip check" lacks "${OUT}" $'\033'
+
+# git ls-remote matches a pattern against the tail of a ref's name, so origin answers for
+# main and for v1.2.0 with these two refs as well, which name another commit.
+sign_git push -q origin "$(commit_of v1.1.0):refs/heads/a/refs/heads/main" "$(commit_of v1.1.0):refs/tags/a/refs/tags/v1.2.0"
+check "origin answers for main with a second ref" equals "$(git -C "${SIGN_REPO}" ls-remote origin refs/heads/main | wc -l | tr -d ' ')" "2"
+check "origin answers for v1.2.0 with a second ref" contains "$(git -C "${SIGN_REPO}" ls-remote origin refs/tags/v1.2.0)" "refs/tags/a/refs/tags/v1.2.0"
+sign_piped "${UNUSED_LINE}" "$(typed_for v1.2.0)" v1.2.0 "${ZIP}" "${KEYS}/plain.pem"
+sign_git push -q origin ":refs/heads/a/refs/heads/main" ":refs/tags/a/refs/tags/v1.2.0"
+SHARED_KEPT=6
+check "refs whose names only end like the branch's and the tag's do not stand in for them" equals "${STATUS}" "0"
+
+sign_piped "${PASSPHRASE}" "${NEVER_READ}" v1.3.8 "${ZIP}" "${KEYS}/encrypted.pem"
+sign_refused "check 9, the release tag before on the tag's own commit" "v1.3.7, the release tag before v1.3.8, is on the commit of v1.3.8 itself"
+
+sign_piped "${UNUSED_LINE}" "$(typed_for v1.0.0)" v1.0.0 "${ZIP}" "${KEYS}/plain.pem"
+SHARED_KEPT=7
+check "a tag no lower release tag reaches: signed" equals "${STATUS}" "0"
+check "it is shown with no release before it" contains "${OUT}" "Before   no release tag"
+check "every commit it reaches is counted" contains "${OUT}" "Commits with no release tag before it (2):"
+check "and its trust document counts as a change" contains "${OUT}" "trust/trust-1.json"
+
+# The folder a signature is left in, as the stand-in ls reports it: root's with no sticky
+# bit, another account's, this account's with write for the group or for everyone and no
+# sticky bit, then root's with the sticky bit, which /Users/Shared is.
+OUT_ROOT_REFUSAL="is neither this account's own and closed to other accounts nor root's or this account's with the sticky bit set"
+printf 'drwxrwxrwx 2 0 0 64 Jan  1 00:00 .\n' > "${LS_SAYS}"
+sign_piped "${UNUSED_LINE}" "${NEVER_READ}" v1.2.0 "${ZIP}" "${KEYS}/plain.pem"
+sign_refused "a hand-over folder of root's with no sticky bit" "${SHARED} ${OUT_ROOT_REFUSAL}"
+printf 'drwxrwxrwt 2 %s 0 64 Jan  1 00:00 .\n' "$(($(id -u) + 1))" > "${LS_SAYS}"
+sign_piped "${UNUSED_LINE}" "${NEVER_READ}" v1.2.0 "${ZIP}" "${KEYS}/plain.pem"
+sign_refused "a hand-over folder of another account's" "${SHARED} ${OUT_ROOT_REFUSAL}"
+printf 'drwxrwxr-x 2 %s 0 64 Jan  1 00:00 .\n' "$(id -u)" > "${LS_SAYS}"
+sign_piped "${UNUSED_LINE}" "${NEVER_READ}" v1.2.0 "${ZIP}" "${KEYS}/plain.pem"
+sign_refused "a hand-over folder of this account's its group may write to" "${SHARED} ${OUT_ROOT_REFUSAL}"
+printf 'drwxr-xrwx 2 %s 0 64 Jan  1 00:00 .\n' "$(id -u)" > "${LS_SAYS}"
+sign_piped "${UNUSED_LINE}" "${NEVER_READ}" v1.2.0 "${ZIP}" "${KEYS}/plain.pem"
+sign_refused "a hand-over folder of this account's everyone may write to" "${SHARED} ${OUT_ROOT_REFUSAL}"
+printf 'drwxrwxrwt 2 0 0 64 Jan  1 00:00 .\n' > "${LS_SAYS}"
+sign_piped "${UNUSED_LINE}" "$(typed_for v1.2.0)" v1.2.0 "${ZIP}" "${KEYS}/plain.pem"
+rm "${LS_SAYS}"
+SHARED_KEPT=8
+check "a hand-over folder of root's with the sticky bit takes the signature" equals "${STATUS}" "0"
 
 echo "── sign-release.sh: usage ──"
 run bash "${SIGN}" --help
