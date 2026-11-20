@@ -84,6 +84,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (Exclude Addons off on Godot 4.2 to 4.5, or `res://addons` set to Include in Directory
   Rules on 4.6+): seven variables typed from a Variant value, which Godot treats as an
   error by default, stopped it compiling.
+- `resource_write` reads a String or an untagged dictionary as the type the property, or
+  the shader uniform behind a `shader_parameter/<name>` key, declares: a constructor
+  string such as `"Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 2, 3)"`, a colour name or
+  HTML code for a Color, or `{"r", "g", "b", "a"}` for a Color. It used to report success
+  while the value was refused, or saved as the uniform's default. A value that doesn't
+  read as the declared type now leaves the property unchanged with a warning
+  ([#154](https://github.com/NPGameDev/godot-mcp-toolkit/issues/154)).
 
 ## [1.1.2] - 2026-10-29
 
