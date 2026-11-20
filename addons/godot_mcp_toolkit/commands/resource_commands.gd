@@ -42,11 +42,23 @@ static func _apply_resource_properties(
 			warnings.append(
 				"property '%s': resource not found at %s; value left unchanged" % [key_string, missing])
 			continue
-		var coerced = Coerce.coerce_value(raw_value)
+		# The type the property declares; for a shader_parameter/<name> key, the type
+		# of the shader's uniform. An untagged dictionary takes its tag from it.
+		var entry := DeclaredTypeFitter.property_entry(resource, key_string)
+		var declared_type := int(entry.get("type", TYPE_NIL))
+		var coerced = Coerce.coerce_value_hint(raw_value, type_convert(null, declared_type))
 		if typeof(coerced) == TYPE_DICTIONARY and (coerced as Dictionary).has("_coerce_error"):
 			warnings.append(
 				"property '%s': %s; value left unchanged" % [key_string, str(coerced["_coerce_error"])])
 			continue
+		# A typed property refuses a String or a Dictionary without an error, and a
+		# ShaderMaterial caches either, then saves the uniform's default in its place.
+		var read := DeclaredTypeFitter.fit_string_or_dictionary(
+				coerced, key_string, declared_type)
+		if not str(read["error"]).is_empty():
+			warnings.append("%s; value left unchanged" % str(read["error"]))
+			continue
+		coerced = read["value"]
 		# Compound paths (e.g. "sources/0", "tiles/0:0/0") route through
 		# Object._set() which many built-in types (TileSet, AnimationLibrary)
 		# use for sub-resource slots not exposed in get_property_list().
@@ -67,7 +79,6 @@ static func _apply_resource_properties(
 		else:
 			# An inspector group, subgroup or category header is not a property:
 			# set() would store nothing for a key that names only a header.
-			var entry := DeclaredTypeFitter.property_entry(resource, key_string)
 			if entry.is_empty():
 				warnings.append(
 					"property '%s' unknown on %s; value ignored" % [key_string, resource_class])
@@ -75,7 +86,6 @@ static func _apply_resource_properties(
 			# A bare path on a Resource property: a live instance drops it and a
 			# placeholder saves it as a String. Warn with the same hint
 			# node_set_property gives, and save the rest.
-			var declared_type := int(entry.get("type", TYPE_NIL))
 			var bare_path := BarePathCheck.bare_path_message(key_string, raw_value, declared_type)
 			if not bare_path.is_empty():
 				warnings.append("%s; value left unchanged" % bare_path)
@@ -87,6 +97,13 @@ static func _apply_resource_properties(
 			resource.set(key_string, fit["value"])
 			if not str(fit["warning"]).is_empty():
 				warnings.append(str(fit["warning"]))
+		# A value of another type may not survive the save, so say when one took.
+		var kept_type := typeof(resource.get(key_string))
+		if declared_type not in [TYPE_NIL, TYPE_OBJECT] and kept_type != declared_type:
+			warnings.append(
+				"property '%s' on %s holds %s where %s is declared; the saved file may not keep it"
+					% [key_string, resource_class, type_string(kept_type),
+						type_string(declared_type)])
 	return warnings
 
 

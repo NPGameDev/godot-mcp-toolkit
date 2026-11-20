@@ -24,6 +24,13 @@ const PropertySetCheck := preload("res://addons/godot_mcp_toolkit/contract/prope
 const _PROPERTY_HEADER_USAGE := (
 		PROPERTY_USAGE_GROUP | PROPERTY_USAGE_SUBGROUP | PROPERTY_USAGE_CATEGORY)
 
+## The declared types [method fit_string_or_dictionary] passes a String or a
+## Dictionary through to: a Variant, the types a String converts to, an object, which
+## a bare path check covers, and a Dictionary.
+const _TYPES_A_STRING_OR_DICTIONARY_FITS: Array[int] = [
+	TYPE_NIL, TYPE_STRING, TYPE_STRING_NAME, TYPE_NODE_PATH, TYPE_OBJECT, TYPE_DICTIONARY,
+]
+
 ## For each element type, the other types an element may have and still convert
 ## when the engine fills a typed array: the engine's strict conversions
 ## (Variant::can_convert_strict). Arrays and packed arrays, which convert into each
@@ -94,6 +101,41 @@ static func fit(target: Object, property: String, value: Variant) -> Dictionary:
 	if conversion["truncated"]:
 		warning = PropertySetCheck.adjusted_warning(conversion["value"], value, property)
 	return {"value": conversion["value"], "warning": warning, "error": ""}
+
+
+## Reads a String or a Dictionary, the values [code]Coerce.coerce_value[/code] passes
+## through untouched, as [param declared_type], the built-in type a property or a
+## shader uniform declares, so the write sets a value of that type.
+##
+## A String reads as the declared type's constructor text, as a scene file spells it
+## ([code]"Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0)"[/code]), and for a
+## [Color] also as a colour name or HTML code. A Dictionary does not fit: the caller
+## has already tagged an untagged one from the declared type where it could. A
+## property declared as a Variant, a String-like type, an object or a Dictionary, and
+## any other value, pass through.
+## [br][br]
+## Returns [code]{"value": <the value to set>, "error": String}[/code].
+## [code]error[/code] is empty unless the value does not fit; it then names
+## [param property], and the caller leaves the property unchanged.
+static func fit_string_or_dictionary(value: Variant, property: String, declared_type: int) -> Dictionary:
+	if declared_type in _TYPES_A_STRING_OR_DICTIONARY_FITS \
+			or not (value is String or value is Dictionary):
+		return {"value": value, "error": ""}
+	if value is String:
+		var text: String = value
+		if declared_type == TYPE_COLOR and _names_a_colour(text):
+			return {"value": Color.from_string(text, Color()), "error": ""}
+		# Only the constructor text is parsed: it holds numbers and quoted strings, so
+		# str_to_var builds no object from it.
+		if text.strip_edges().begins_with(type_string(declared_type) + "("):
+			var parsed: Variant = str_to_var(text)
+			if typeof(parsed) == declared_type:
+				return {"value": parsed, "error": ""}
+		return {"value": value, "error": "property '%s': the String \"%s\" doesn't read as %s"
+			% [property, text, type_string(declared_type)]}
+	return {"value": value, "error":
+		"property '%s': a Dictionary without a \"type\" key doesn't fit %s; pass the tagged form"
+			% [property, type_string(declared_type)]}
 
 
 ## The entry [param target]'s property list holds for [param property], or an empty

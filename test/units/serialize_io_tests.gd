@@ -49,6 +49,7 @@ static func run(testing) -> void:
 	_test_resource_write_typed_int_array(testing)
 	_test_resource_write_typed_array_element_precheck(testing)
 	_test_resource_write_typed_color_array(testing)
+	_test_resource_write_string_and_untagged_dict(testing)
 
 
 # --- Coerce/serialize round-trip symmetry ---------------------------------
@@ -1137,6 +1138,68 @@ static func _test_resource_write_typed_color_array(testing) -> void:
 	testing.eq(tints[0] if tints.size() > 0 else null, Color.RED, "\"red\" → Color.RED")
 	testing.eq(tints[1] if tints.size() > 1 else null, Color.html("#ff8000"),
 			"\"#ff8000\" → the HTML colour")
+	print("")
+
+
+# coerce_value passes a String and an untagged Dictionary through. A typed script
+# property refuses either without an error, and a ShaderMaterial caches either for
+# a shader_parameter/<name> key, then saves the uniform's default in its place. The
+# writer reads each as the declared type, or warns and leaves the value unchanged.
+# Writes a user:// temp file and removes it afterward.
+static func _test_resource_write_string_and_untagged_dict(testing) -> void:
+	testing.begin("resource.write reads a String or an untagged dict as the declared type")
+	var fixture := "user://resource_write_string_and_dict_fixture.tres"
+
+	var shader := Shader.new()
+	shader.code = ("shader_type spatial;\n"
+		+ "uniform vec4 tint : source_color = vec4(1.0);\n"
+		+ "uniform float puddles = 0.25;\n")
+	var from_string := ShaderMaterial.new()
+	from_string.shader = shader
+	var string_warnings := ResourceCommands._apply_resource_properties(from_string, {
+		"shader_parameter/tint": "Color(0.86, 0.8, 0.71, 1)",
+		"shader_parameter/puddles": 0.6}, "ShaderMaterial")
+	testing.eq(string_warnings.size(), 0, "a Color string on a uniform → no warnings")
+	testing.eq(ResourceSaver.save(from_string, fixture), OK, "material saved")
+	testing.eq(_saved_property_line(fixture, "shader_parameter/tint"),
+			"shader_parameter/tint = Color(0.86, 0.8, 0.71, 1)",
+			"a Color string → the file stores the Color")
+	testing.eq(_saved_property_line(fixture, "shader_parameter/puddles"),
+			"shader_parameter/puddles = 0.6", "the float uniform is stored")
+
+	var from_dict := ShaderMaterial.new()
+	from_dict.shader = shader
+	var dict_warnings := ResourceCommands._apply_resource_properties(from_dict, {
+		"shader_parameter/tint": {"r": 0.5, "g": 0.4, "b": 0.3, "a": 1}}, "ShaderMaterial")
+	testing.eq(dict_warnings.size(), 0, "an untagged dict on a Color uniform → no warnings")
+	testing.eq(ResourceSaver.save(from_dict, fixture), OK, "material saved")
+	testing.eq(_saved_property_line(fixture, "shader_parameter/tint"),
+			"shader_parameter/tint = Color(0.5, 0.4, 0.3, 1)",
+			"an untagged dict → the file stores the Color it names")
+
+	var hold_script := GDScript.new()
+	hold_script.source_code = "extends Resource\n@export var hip := Transform3D.IDENTITY\n"
+	testing.eq(hold_script.reload(), OK, "the Transform3D holder compiles")
+	var hold: Resource = hold_script.new()
+	var hip_warnings := ResourceCommands._apply_resource_properties(hold, {
+		"hip": "Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 2, 3)"}, "Resource")
+	testing.eq(hip_warnings.size(), 0, "a Transform3D string → no warnings")
+	testing.eq(hold.get("hip"), Transform3D(Basis.IDENTITY, Vector3(1, 2, 3)),
+			"a Transform3D string → the Transform3D it spells")
+
+	var refused: Resource = hold_script.new()
+	var refused_warnings := ResourceCommands._apply_resource_properties(refused, {
+		"hip": "not a transform"}, "Resource")
+	refused_warnings.append_array(ResourceCommands._apply_resource_properties(refused, {
+		"hip": {"x": 1}}, "Resource"))
+	testing.eq(refused_warnings.size(), 2,
+			"a String and a dict that don't fit a Transform3D → one warning each")
+	for warning in refused_warnings:
+		testing.ok(warning.contains("'hip'") and warning.contains("value left unchanged"),
+				"the warning names the property and says it was left unchanged")
+	testing.eq(refused.get("hip"), Transform3D.IDENTITY, "the value is left unchanged")
+
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(fixture))
 	print("")
 
 
