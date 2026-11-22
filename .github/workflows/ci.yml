@@ -103,6 +103,18 @@ jobs:
       - name: Trust documents script test
         run: bash scripts/test_trust_documents.sh
 
+      # publish-release.sh's steps against stand-ins for gh, curl, node and Godot, signed
+      # with keys made at run time (no Godot, no network).
+      - name: Publish script test
+        run: bash scripts/test_publish_release.sh
+
+      # check-release-zip.mjs on zips built at run time. Nothing may be skipped here:
+      # this runner has zip.
+      - name: Release zip check script test
+        env:
+          CHECK_RELEASE_ZIP_REQUIRE_ALL: "1"
+        run: bash scripts/test_check_release_zip.sh
+
       # validate_gdscript.sh's warm-up and its setup-error exits, against a stub
       # binary (no Godot, no network).
       - name: Validator script test
@@ -138,6 +150,13 @@ jobs:
               ;;
           esac
           bash scripts/test_release_files.sh
+
+      # attach's reader check runs Godot under gtimeout, which macOS does not ship.
+      - name: Publish script test
+        run: |
+          command -v gtimeout >/dev/null 2>&1 || brew install coreutils
+          export PATH="/usr/bin:${PATH}"
+          bash scripts/test_publish_release.sh
 
       - name: Trust documents script test
         env:
