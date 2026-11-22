@@ -7,7 +7,11 @@
 #   - both build scripts on a fixture repo: the missing .uid and the unreadable commit
 #     time refused, the list and manifest pinned, the .ps1 matching them and ASCII; the
 #     bash build also refusing an unreadable Godot floor or server pin;
-#   - scripts/sign-release.sh with plain, encrypted, mismatched and non-RSA keys;
+#   - scripts/sign-release.sh as a copy inside a tagged repo made here, with a bare repo
+#     as its origin, its own release identity and stand-ins for node, gh and ls: plain,
+#     encrypted, unlisted and non-RSA keys, each check signing refuses on, what it shows
+#     before it asks for the commit's digits, the folder a signature is left in, and
+#     --verify against the trust documents at the tag;
 #   - scripts/check_release_files.sh's failures, on real zips.
 #
 # The real builds need zip, unzip and pwsh, the check's cases need zip and unzip, and the
@@ -297,13 +301,27 @@ else
 fi
 
 echo "── sign-release.sh ──"
-SIGN="${REPO_ROOT}/scripts/sign-release.sh"
+# The script under test is a copy inside the fixture repo: it reads the repository it sits
+# in, and no variable may aim it at another.
+SIGN_REPO="${WORK}/sign-repo"
+SIGN="${SIGN_REPO}/scripts/sign-release.sh"
+TRUST_TOOL="${REPO_ROOT}/scripts/trust-document.sh"
 KEYS="${WORK}/keys"
+DOCUMENTS="${KEYS}/documents"
 SIGNING="${WORK}/signing"
-SIG_NAME="godot-mcp-toolkit-1.2.0.update.json.sig"
+# Stands in for /Users/Shared, the folder a signature is handed over through.
+SHARED="${WORK}/shared"
+SIGN_TMP="${WORK}/sign-tmp"
+MANIFEST_NAME="godot-mcp-toolkit-1.2.0.update.json"
+SIG_NAME="${MANIFEST_NAME}.sig"
+EMBEDDED_FILE="addons/godot_mcp_toolkit/self_update/embedded_trust_document.gd"
+CONSTANT_FILE="addons/godot_mcp_toolkit/versioning/mcp_version_utils.gd"
 PASSPHRASE="fixture-passphrase"
 UNUSED_LINE="a line a plain key does not need"
-mkdir -p "${KEYS}" "${SIGNING}"
+# What a run is handed on file descriptor 3 when it refuses before it reads the commit's
+# digits there.
+NEVER_READ="never read"
+mkdir -p "${KEYS}" "${DOCUMENTS}/pinned" "${DOCUMENTS}/other" "${SIGNING}" "${SHARED}" "${SIGN_TMP}"
 
 openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out "${KEYS}/plain.pem" 2>/dev/null
 openssl pkey -in "${KEYS}/plain.pem" -pubout -out "${KEYS}/plain.pub.pem" 2>/dev/null
@@ -311,36 +329,170 @@ openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -aes-256-cbc -pass 
 openssl pkey -in "${KEYS}/encrypted.pem" -passin "pass:${PASSPHRASE}" -pubout -out "${KEYS}/encrypted.pub.pem" 2>/dev/null
 openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:prime256v1 -out "${KEYS}/ec.pem" 2>/dev/null
 openssl pkey -in "${KEYS}/ec.pem" -pubout -out "${KEYS}/ec.pub.pem" 2>/dev/null
+# A root for the fixture's trust documents, and a release key none of them lists.
+for name in root unlisted; do
+  openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out "${KEYS}/${name}.pem" 2>/dev/null
+  openssl pkey -in "${KEYS}/${name}.pem" -pubout -out "${KEYS}/${name}.pub.pem" 2>/dev/null
+done
 
-# Gives a new folder a manifest; $2 is the manifest's file name there.
-make_signing_case() {
-  mkdir -p "${SIGNING}/$1"
-  cp "${WORK}/manifest.expected" "${SIGNING}/$1/$2"
+# The fixture's trust documents: the first, signed by the root and listing the plain and
+# the encrypted key; a second that drops the plain key, kept both unsigned and signed;
+# and another first document, signed and valid, that the fixture's identity does not pin.
+# trust-document.sh's sign reads a passphrase line from a pipe even for a plain key.
+sign_document() {
+  echo unused | bash "${TRUST_TOOL}" sign "$1" "$2" >/dev/null
 }
-# Runs sign-release.sh with the line $1 piped to its stdin.
-sign_piped() {
-  local stdin_line="$1"
+FIRST="${DOCUMENTS}/pinned/trust-1.json"
+SECOND="${DOCUMENTS}/pinned/trust-2.json"
+UNSIGNED_SECOND="${DOCUMENTS}/unsigned-2.json"
+OTHER_FIRST="${DOCUMENTS}/other/trust-1.json"
+bash "${TRUST_TOOL}" build --first --add-root "${KEYS}/root.pub.pem" \
+  --add-release "${KEYS}/plain.pub.pem" --add-release "${KEYS}/encrypted.pub.pem" --out "${DOCUMENTS}/pinned" >/dev/null
+sign_document "${FIRST}" "${KEYS}/root.pem"
+bash "${TRUST_TOOL}" build "${FIRST}" --drop-release "${KEYS}/plain.pub.pem" >/dev/null
+cp "${SECOND}" "${UNSIGNED_SECOND}"
+sign_document "${SECOND}" "${KEYS}/root.pem"
+bash "${TRUST_TOOL}" build --first --add-root "${KEYS}/unlisted.pub.pem" \
+  --add-release "${KEYS}/plain.pub.pem" --out "${DOCUMENTS}/other" >/dev/null
+sign_document "${OTHER_FIRST}" "${KEYS}/unlisted.pem"
+
+# git in the fixture repo. Every commit carries one fixed time, which a manifest's expiry
+# counts from.
+sign_git() {
+  GIT_AUTHOR_DATE="1700000000 +0000" GIT_COMMITTER_DATE="1700000000 +0000" \
+    git -C "${SIGN_REPO}" -c user.name=fixture -c user.email=fixture@example.invalid \
+    -c commit.gpgsign=false -c tag.gpgsign=false "$@"
+}
+
+# Sets the fixture's trust folder to the files given as <name>=<source>, and the document
+# its toolkit embeds to the file $1.
+set_trust() {
+  local embedded="$1" pair
   shift
-  OUT="$(bash "${SIGN}" "$@" 2>&1 < <(printf '%s\n' "${stdin_line}"))" && STATUS=0 || STATUS=$?
+  rm -rf "${SIGN_REPO}/trust"
+  mkdir -p "${SIGN_REPO}/trust"
+  for pair in "$@"; do
+    cp "${pair#*=}" "${SIGN_REPO}/trust/${pair%%=*}"
+  done
+  printf "@tool\nextends RefCounted\n\nconst DOCUMENT := '%s'\n" "$(cat "${embedded}")" > "${SIGN_REPO}/${EMBEDDED_FILE}"
 }
 
-make_signing_case plain "godot-mcp-toolkit-1.2.0.update.json"
-sign_piped "${UNUSED_LINE}" "${SIGNING}/plain/godot-mcp-toolkit-1.2.0.update.json" "${KEYS}/plain.pem" "${KEYS}/plain.pub.pem"
-check "plain key through the pipe: signed" equals "${STATUS}" "0"
-check "plain key: the .sig verifies with openssl directly" verifies "${KEYS}/plain.pub.pem" "${SIGNING}/plain/${SIG_NAME}" "${SIGNING}/plain/godot-mcp-toolkit-1.2.0.update.json"
-check "plain key: the raw 256-byte signature of an RSA-2048 key" equals "$(file_size "${SIGNING}/plain/${SIG_NAME}")" "256"
-check "plain key: the output says to upload to the draft" contains "${OUT}" "draft before publishing"
-check "plain key: the upload command names the manifest's version" contains "${OUT}" "gh release upload v1.2.0 "
+# Commits the fixture's tree as it stands and tags that commit $1 with an annotated tag,
+# the kind a release gets.
+tag_state() {
+  sign_git add -A .
+  sign_git commit -q --allow-empty -m "$1"
+  sign_git tag -a -m "$1" "$1"
+}
 
-make_signing_case encrypted "godot-mcp-toolkit-1.2.0.update.json"
-sign_piped "${PASSPHRASE}" "${SIGNING}/encrypted/godot-mcp-toolkit-1.2.0.update.json" "${KEYS}/encrypted.pem" "${KEYS}/encrypted.pub.pem"
-check "encrypted key through a pipe: signed" equals "${STATUS}" "0"
-check "encrypted key: the .sig verifies with openssl directly" verifies "${KEYS}/encrypted.pub.pem" "${SIGNING}/encrypted/${SIG_NAME}" "${SIGNING}/encrypted/godot-mcp-toolkit-1.2.0.update.json"
+commit_of() {
+  git -C "${SIGN_REPO}" rev-parse "refs/tags/$1^{commit}"
+}
 
-make_signing_case wrong-pass "godot-mcp-toolkit-1.2.0.update.json"
-sign_piped "not-the-passphrase" "${SIGNING}/wrong-pass/godot-mcp-toolkit-1.2.0.update.json" "${KEYS}/encrypted.pem" "${KEYS}/encrypted.pub.pem"
-check "the wrong passphrase fails" equals "$([[ "${STATUS}" -ne 0 ]] && echo failed || echo passed)" "failed"
-check "the wrong passphrase leaves no .sig" no_file "${SIGNING}/wrong-pass/${SIG_NAME}"
+# The fixture: a bare repo as origin, and a clone-like repo that holds the scripts under
+# test and a release identity naming that origin and the first document above. No
+# variable overrides the identity, so the fixture writes its own.
+git init -q --bare "${WORK}/origin.git"
+mkdir -p "${SIGN_REPO}/scripts/lib" "$(dirname "${SIGN_REPO}/${EMBEDDED_FILE}")" "$(dirname "${SIGN_REPO}/${CONSTANT_FILE}")"
+git -C "${SIGN_REPO}" init -q
+git -C "${SIGN_REPO}" symbolic-ref HEAD refs/heads/main
+git -C "${SIGN_REPO}" config core.autocrlf false
+git -C "${SIGN_REPO}" remote add origin "${WORK}/origin.git"
+cp "${REPO_ROOT}/scripts/sign-release.sh" "${REPO_ROOT}/scripts/trust-document.sh" "${SIGN_REPO}/scripts/"
+cp "${REPO_ROOT}/scripts/lib/release_checks.sh" "${REPO_ROOT}/scripts/lib/release_files.sh" \
+  "${REPO_ROOT}/scripts/lib/compatible_server.sh" "${SIGN_REPO}/scripts/lib/"
+# git on Windows rewrites the path it is given, so the identity pins the URL as git
+# reports it.
+ORIGIN_URL="$(git -C "${SIGN_REPO}" remote get-url origin)"
+cat > "${SIGN_REPO}/scripts/lib/release_identity.sh" <<IDENTITY
+RELEASE_SLUG='fixture/sign-repo'
+RELEASE_ORIGIN_URL='${ORIGIN_URL}'
+RELEASE_BRANCH='main'
+RELEASE_TRUST_1_SHA256='$(rf_sha256 "${FIRST}")'
+IDENTITY
+printf 'const GODOT_MIN_VERSION := "4.2"\nconst COMPATIBLE_SERVER_VERSION := "1.3.0"\n' > "${SIGN_REPO}/${CONSTANT_FILE}"
+
+# One commit on main and one tag per state. v1.1.0 holds no trust document and is a
+# lightweight tag, which origin lists with no ^{} line.
+sign_git add -A .
+sign_git commit -q -m v1.1.0
+sign_git tag v1.1.0
+set_trust "${FIRST}" "trust-1.json=${FIRST}"
+tag_state v1.2.0
+# trust-2 drops the plain key.
+set_trust "${SECOND}" "trust-1.json=${FIRST}" "trust-2.json=${SECOND}"
+tag_state v1.2.1
+# Another first document than the pinned one.
+set_trust "${OTHER_FIRST}" "trust-1.json=${OTHER_FIRST}"
+tag_state v1.3.0
+# A second document no root signed.
+set_trust "${UNSIGNED_SECOND}" "trust-1.json=${FIRST}" "trust-2.json=${UNSIGNED_SECOND}"
+tag_state v1.3.1
+# A gap where trust-2.json belongs.
+set_trust "${SECOND}" "trust-1.json=${FIRST}" "trust-3.json=${SECOND}"
+tag_state v1.3.2
+# A file named like a trust document that is none.
+set_trust "${SECOND}" "trust-1.json=${FIRST}" "trust-2.json=${SECOND}" "trust-01.json=${FIRST}"
+tag_state v1.3.3
+# The toolkit embeds the first document while the tag's highest is the second.
+set_trust "${FIRST}" "trust-1.json=${FIRST}" "trust-2.json=${SECOND}"
+tag_state v1.3.4
+# No Godot floor for the manifest.
+set_trust "${SECOND}" "trust-1.json=${FIRST}" "trust-2.json=${SECOND}"
+printf 'const COMPATIBLE_SERVER_VERSION := "1.3.0"\n' > "${SIGN_REPO}/${CONSTANT_FILE}"
+tag_state v1.3.5
+# A release tag on a commit that never reached main.
+sign_git checkout -q -b side "$(commit_of v1.2.0)"
+tag_state v1.4.0
+sign_git checkout -q main
+# A later version's tag on the commit of v1.2.1, which is not the release before v1.2.1.
+sign_git tag -a -m v1.10.0 v1.10.0 "$(commit_of v1.2.1)"
+# v1.6.0 and v1.7.0 go to origin on main's tip, v1.3.5's commit, which no tag signed
+# below reaches. Then this checkout moves the first and drops the second, and makes
+# v1.5.0, which origin never gets.
+sign_git tag -a -m v1.6.0 v1.6.0 "$(commit_of v1.3.5)"
+sign_git tag -a -m v1.7.0 v1.7.0 "$(commit_of v1.3.5)"
+sign_git push -q origin main --tags
+sign_git tag -f -a -m v1.6.0 v1.6.0 "$(commit_of v1.3.4)" >/dev/null
+sign_git tag -d v1.7.0 >/dev/null
+sign_git tag -a -m v1.5.0 v1.5.0 "$(commit_of v1.3.5)"
+
+# Stand-ins on the PATH for the tools signing could reach: a node that logs where and how
+# it was run, prints what the file ${NODE_SAYS} holds when there is one, on stdout and
+# again on stderr behind "on stderr: ", and accepts the zip unless the file
+# ${NODE_REFUSES} exists; a gh that only logs, because signing must never run it; and an
+# ls that answers for a folder's owner and mode with what the file ${LS_SAYS} holds when
+# there is one, since no test can make a folder another account owns.
+export NODE_LOG="${WORK}/node.log"
+export NODE_SAYS="${WORK}/node-says"
+export NODE_REFUSES="${WORK}/node-refuses"
+export GH_LOG="${WORK}/gh.log"
+export LS_SAYS="${WORK}/ls-says"
+REAL_LS="$(command -v ls)"
+export REAL_LS
+mkdir -p "${WORK}/stub"
+cat > "${WORK}/stub/node" <<'STUB'
+#!/usr/bin/env bash
+printf '%s|%s\n' "$(pwd)" "$*" >> "${NODE_LOG}"
+if [[ -f "${NODE_SAYS}" ]]; then
+  cat "${NODE_SAYS}"
+  sed 's/^/on stderr: /' "${NODE_SAYS}" >&2
+fi
+[[ ! -e "${NODE_REFUSES}" ]]
+STUB
+cat > "${WORK}/stub/gh" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "${GH_LOG}"
+STUB
+cat > "${WORK}/stub/ls" <<'STUB'
+#!/usr/bin/env bash
+if [[ -f "${LS_SAYS}" && "${1:-}" == "-ldn" ]]; then
+  cat "${LS_SAYS}"
+else
+  exec "${REAL_LS}" "$@"
+fi
+STUB
+chmod +x "${WORK}/stub/node" "${WORK}/stub/gh" "${WORK}/stub/ls"
 
 # An openssl on the PATH that logs each call before running the real one.
 REAL_OPENSSL="$(command -v openssl)"
@@ -362,85 +514,422 @@ private_key_reads() {
   fi
 }
 
-make_signing_case once "godot-mcp-toolkit-1.2.0.update.json"
 PATH="${WORK}/stub:${ORIGINAL_PATH}"
-sign_piped "${PASSPHRASE}" "${SIGNING}/once/godot-mcp-toolkit-1.2.0.update.json" "${KEYS}/encrypted.pem" "${KEYS}/encrypted.pub.pem"
-PATH="${ORIGINAL_PATH}"
-check "the private key is read exactly once" equals "$(private_key_reads "${KEYS}/encrypted.pem")" "1"
 
-make_signing_case ec "godot-mcp-toolkit-1.2.0.update.json"
-rm -f "${OPENSSL_LOG}"
-PATH="${WORK}/stub:${ORIGINAL_PATH}"
-sign_piped "${UNUSED_LINE}" "${SIGNING}/ec/godot-mcp-toolkit-1.2.0.update.json" "${KEYS}/ec.pem" "${KEYS}/ec.pub.pem"
-PATH="${ORIGINAL_PATH}"
+# The zip signing is handed, under a name that is not the release's, and beside it a
+# manifest that signing must not read: it claims another size than the zip has.
+ZIP="${SIGNING}/handed-over.zip"
+printf 'abc' > "${ZIP}"
+printf '{"format": 1, "version": "1.2.0", "archive": "godot-mcp-toolkit-1.2.0.zip", "archive_size": 3, "archive_sha256": "%s", "min_godot": "4.2", "compatible_server": "1.3.0", "expires_at": 1715552000}\n' "${HASH_ABC}" > "${WORK}/signed.expected"
+sed 's/"archive_size": 3/"archive_size": 4/' "${WORK}/signed.expected" > "${SIGNING}/${MANIFEST_NAME}"
+
+# The first 8 hex digits of the commit of the tag $1: what the maintainer types.
+typed_for() {
+  local commit
+  commit="$(commit_of "$1")"
+  printf '%s\n' "${commit:0:8}"
+}
+
+# Runs the fixture's sign-release.sh as from a pipe. The line $1 goes to its stdin, where
+# it reads the passphrase, and the line $2 to its file descriptor 3, where it reads the
+# commit's digits when stdin is no terminal. The variables in SIGN_ENV are set for that
+# run only. SIGN_KEY keeps the key the run was given, its last argument.
+SIGN_ENV=()
+sign_piped() {
+  local stdin_line="$1" typed="$2"
+  shift 2
+  SIGN_KEY="${*: -1}"
+  rm -f "${OPENSSL_LOG}"
+  OUT="$(env TMPDIR="${SIGN_TMP}" SIGN_RELEASE_OUT_ROOT="${SHARED}" ${SIGN_ENV[@]+"${SIGN_ENV[@]}"} \
+    bash "${SIGN}" "$@" 2>&1 3< <(printf '%s\n' "${typed}") < <(printf '%s\n' "${stdin_line}"))" && STATUS=0 || STATUS=$?
+}
+sign_verify() {
+  run env TMPDIR="${SIGN_TMP}" bash "${SIGN}" --verify "$@"
+}
+
+# The folder the last run left its signature in, from its last line.
+out_folder() {
+  printf '%s\n' "${OUT}" | tail -n 1 | sed 's/^OUT //'
+}
+# How many folders signing has left for the other account; SHARED_KEPT counts the ones
+# the good runs so far should have.
+shared_folders() {
+  find "${SHARED}" -mindepth 1 -maxdepth 1 | wc -l | tr -d ' '
+}
+SHARED_KEPT=0
+mode_of() {
+  stat -c %a "$1" 2>/dev/null || stat -f %Lp "$1"
+}
+
+# Checks that the last run refused before it reached the private key: exit 1, the reason
+# $2, no folder left, and no read of the key.
+sign_refused() {
+  check "$1: refused" equals "${STATUS}" "1"
+  check "$1: says why" contains "${OUT}" "refused: "
+  check "$1: names the reason" contains "${OUT}" "$2"
+  check "$1: leaves no folder" equals "$(shared_folders)" "${SHARED_KEPT}"
+  check "$1: the private key is not read" equals "$(private_key_reads "${SIGN_KEY}")" "0"
+}
+
+# A closed umask, so the folder and its files are readable from another account only
+# because signing opens them.
+OUTER_UMASK="$(umask)"
+umask 077
+sign_piped "${UNUSED_LINE}" "$(typed_for v1.2.0)" v1.2.0 "${ZIP}" "${KEYS}/plain.pem"
+umask "${OUTER_UMASK}"
+PLAIN_OUT="$(out_folder)"
+SHARED_KEPT=1
+check "plain key through the pipe: signed" equals "${STATUS}" "0"
+check "plain key: the last line names a new folder under the hand-over folder" contains "${PLAIN_OUT}" "${SHARED}/sign-release-v1.2.0."
+check "plain key: it is the only folder left there" equals "$(shared_folders)" "1"
+check "plain key: the line before the last names the attach step, with the tag and that folder" contains "$(printf '%s\n' "${OUT}" | tail -n 2 | head -n 1)" "scripts/publish-release.sh attach v1.2.0 ${PLAIN_OUT}"
+check "plain key: the folder holds the manifest and its .sig, nothing else" equals "$(find "${PLAIN_OUT}" -mindepth 1 | LC_ALL=C sort | tr '\n' ' ')" "${PLAIN_OUT}/${MANIFEST_NAME} ${PLAIN_OUT}/${SIG_NAME} "
+check "plain key: the manifest is the one the tag and the zip give, named for the version, not the one beside the zip" same_bytes "${PLAIN_OUT}/${MANIFEST_NAME}" "${WORK}/signed.expected"
+check "plain key: the .sig verifies with openssl directly" verifies "${KEYS}/plain.pub.pem" "${PLAIN_OUT}/${SIG_NAME}" "${PLAIN_OUT}/${MANIFEST_NAME}"
+check "plain key: the raw 256-byte signature of an RSA-2048 key" equals "$(file_size "${PLAIN_OUT}/${SIG_NAME}")" "256"
+check "plain key: the folder is open to another account" equals "$(mode_of "${PLAIN_OUT}")" "755"
+check "plain key: the manifest is readable from another account" equals "$(mode_of "${PLAIN_OUT}/${MANIFEST_NAME}")" "644"
+check "plain key: the .sig is readable from another account" equals "$(mode_of "${PLAIN_OUT}/${SIG_NAME}")" "644"
+check "plain key: the zip check runs in the repository, on the script's own copy of the zip and the tag" contains "$(cat "${NODE_LOG}")" "${SIGN_REPO}|${SIGN_REPO}/scripts/check-release-zip.mjs ${SIGN_TMP}/sign-release."
+check "plain key: that copy carries the release's name" contains "$(cat "${NODE_LOG}")" "/godot-mcp-toolkit-1.2.0.zip v1.2.0"
+check "plain key: the zip check is not handed the zip's own path" lacks "$(cat "${NODE_LOG}")" "handed-over.zip"
+check "plain key: the tag is shown" contains "${OUT}" "Tag      v1.2.0"
+check "plain key: its commit is shown in full" contains "${OUT}" "Commit   $(commit_of v1.2.0)"
+check "plain key: the commit's subject is shown" contains "${OUT}" "Subject  v1.2.0"
+check "plain key: the commits since the release before are counted" contains "${OUT}" "Commits since v1.1.0 (1):"
+check "plain key: what changed under trust/ since then is shown" contains "${OUT}" "trust/trust-1.json"
+check "plain key: the release before is shown with its commit and that commit's date" contains "${OUT}" "Before   v1.1.0 $(commit_of v1.1.0) 2023-11-14T22:13:20+00:00"
+sign_verify "${PLAIN_OUT}/${MANIFEST_NAME}"
+check "--verify accepts the signed manifest" equals "${STATUS}" "0"
+
+sign_piped "${PASSPHRASE}" "$(typed_for v1.2.0)" v1.2.0 "${ZIP}" "${KEYS}/encrypted.pem"
+ENCRYPTED_OUT="$(out_folder)"
+SHARED_KEPT=2
+check "encrypted key through a pipe: signed" equals "${STATUS}" "0"
+check "encrypted key: the .sig verifies with openssl directly" verifies "${KEYS}/encrypted.pub.pem" "${ENCRYPTED_OUT}/${SIG_NAME}" "${ENCRYPTED_OUT}/${MANIFEST_NAME}"
+check "the private key is read exactly once" equals "$(private_key_reads "${KEYS}/encrypted.pem")" "1"
+check "a second signature gets a folder of its own" equals "$(shared_folders)" "2"
+
+sign_piped "not-the-passphrase" "$(typed_for v1.2.0)" v1.2.0 "${ZIP}" "${KEYS}/encrypted.pem"
+check "the wrong passphrase fails" equals "$([[ "${STATUS}" -ne 0 ]] && echo failed || echo passed)" "failed"
+check "the wrong passphrase leaves no folder" equals "$(shared_folders)" "${SHARED_KEPT}"
+
+sign_piped "${UNUSED_LINE}" "$(typed_for v1.2.0)" v1.2.0 "${ZIP}" "${KEYS}/ec.pem"
 check "an EC key is refused" equals "${STATUS}" "1"
 check "the refusal says RSA" contains "${OUT}" "not an RSA key"
-check "the refusal comes before the private key is read" equals "$(private_key_reads "${KEYS}/ec.pem")" "0"
-check "the refusal leaves no .sig" no_file "${SIGNING}/ec/${SIG_NAME}"
+check "the refusal comes at the one read of the private key" equals "$(private_key_reads "${KEYS}/ec.pem")" "1"
+check "the refusal leaves no folder" equals "$(shared_folders)" "${SHARED_KEPT}"
 
 # An RSA-PSS key prints a modulus like a plain RSA key, but signs with another padding.
 # An openssl may not make such a key, or may not print one.
 if openssl genpkey -algorithm RSA-PSS -pkeyopt rsa_keygen_bits:2048 -out "${KEYS}/pss.pem" 2>/dev/null \
   && openssl pkey -in "${KEYS}/pss.pem" -pubout -out "${KEYS}/pss.pub.pem" 2>/dev/null \
   && openssl pkey -pubin -in "${KEYS}/pss.pub.pem" -noout -text >/dev/null 2>&1; then
-  make_signing_case pss "godot-mcp-toolkit-1.2.0.update.json"
-  sign_piped "${UNUSED_LINE}" "${SIGNING}/pss/godot-mcp-toolkit-1.2.0.update.json" "${KEYS}/pss.pem" "${KEYS}/pss.pub.pem"
+  sign_piped "${UNUSED_LINE}" "$(typed_for v1.2.0)" v1.2.0 "${ZIP}" "${KEYS}/pss.pem"
   check "an RSA-PSS key is refused" equals "${STATUS}" "1"
   check "the RSA-PSS refusal says RSA" contains "${OUT}" "not an RSA key"
-  check "the RSA-PSS refusal leaves no .sig" no_file "${SIGNING}/pss/${SIG_NAME}"
-  run bash "${SIGN}" --key-entry "${KEYS}/pss.pub.pem"
-  check "--key-entry refuses an RSA-PSS key" equals "${STATUS}" "1"
+  check "the RSA-PSS refusal leaves no folder" equals "$(shared_folders)" "${SHARED_KEPT}"
 else
   skip "the RSA-PSS case needs an openssl that makes and prints such a key"
 fi
 
-make_signing_case mismatched "godot-mcp-toolkit-1.2.0.update.json"
-sign_piped "${UNUSED_LINE}" "${SIGNING}/mismatched/godot-mcp-toolkit-1.2.0.update.json" "${KEYS}/plain.pem" "${KEYS}/encrypted.pub.pem"
-check "another key's public half fails" equals "${STATUS}" "1"
-check "the failure leaves no .sig" no_file "${SIGNING}/mismatched/${SIG_NAME}"
-check "the failure leaves no temporary file" no_file "${SIGNING}/mismatched/${SIG_NAME}.tmp"
+echo "── sign-release.sh: each check refuses ──"
+for name in GH_REPO GH_HOST GIT_DIR GIT_WORK_TREE NODE_OPTIONS; do
+  # Set to nothing still counts; GIT_DIR names the fixture's own repository, the one value
+  # that would otherwise change nothing.
+  SIGN_ENV=("${name}=")
+  [[ "${name}" != "GIT_DIR" ]] || SIGN_ENV=("GIT_DIR=${SIGN_REPO}/.git")
+  sign_piped "${UNUSED_LINE}" "${NEVER_READ}" v1.2.0 "${ZIP}" "${KEYS}/plain.pem"
+  sign_refused "check 1, ${name} is set" "${name} is set"
+done
+# The other variables check 1 refuses: two with every check of a refusal, then one run
+# each for the rest.
+for name in GIT_CONFIG_GLOBAL OPENSSL_CONF; do
+  SIGN_ENV=("${name}=")
+  sign_piped "${UNUSED_LINE}" "${NEVER_READ}" v1.2.0 "${ZIP}" "${KEYS}/plain.pem"
+  sign_refused "check 1, ${name} is set" "${name} is set"
+done
+NOT_REFUSED=""
+for name in GIT_COMMON_DIR GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_CONFIG \
+  GIT_CONFIG_COUNT GIT_CONFIG_SYSTEM GIT_CONFIG_PARAMETERS GIT_EXEC_PATH GIT_SSL_NO_VERIFY GIT_SSH_COMMAND \
+  GIT_PROXY_COMMAND GIT_SSL_CAINFO GIT_SSL_CAPATH GIT_GRAFT_FILE GIT_SHALLOW_FILE GIT_REPLACE_REF_BASE \
+  NODE_PATH SSL_CERT_FILE SSL_CERT_DIR; do
+  SIGN_ENV=("${name}=")
+  sign_piped "${UNUSED_LINE}" "${NEVER_READ}" v1.2.0 "${ZIP}" "${KEYS}/plain.pem"
+  [[ "${STATUS}" == "1" && "${OUT}" == *"refused: ${name} is set"* ]] || NOT_REFUSED+="${name} "
+done
+SIGN_ENV=()
+check "check 1, each other variable that aims git elsewhere is refused" equals "${NOT_REFUSED}" ""
 
-make_signing_case renamed "some-other-name.json"
-sign_piped "${UNUSED_LINE}" "${SIGNING}/renamed/some-other-name.json" "${KEYS}/plain.pem" "${KEYS}/plain.pub.pem"
-check "a manifest under another path: signed" equals "${STATUS}" "0"
-check "the .sig takes its name from the version" is_file "${SIGNING}/renamed/${SIG_NAME}"
-check "the .sig does not take its name from the path" no_file "${SIGNING}/renamed/some-other-name.json.sig"
-run bash "${SIGN}" --verify "${SIGNING}/renamed/some-other-name.json" "${KEYS}/plain.pub.pem"
-check "--verify finds it under that same name" equals "${STATUS}" "0"
+# A full copy of origin under another path: only the pinned URL tells them apart.
+cp -R "${WORK}/origin.git" "${WORK}/elsewhere.git"
+git -C "${SIGN_REPO}" remote set-url origin "${WORK}/elsewhere.git"
+sign_piped "${UNUSED_LINE}" "${NEVER_READ}" v1.2.0 "${ZIP}" "${KEYS}/plain.pem"
+git -C "${SIGN_REPO}" remote set-url origin "${ORIGIN_URL}"
+sign_refused "check 2, origin is another repository" "not ${ORIGIN_URL}"
 
-make_signing_case no-version "godot-mcp-toolkit-1.2.0.update.json"
-printf '{"format": 1, "version": "../../evil"}\n' > "${SIGNING}/no-version/godot-mcp-toolkit-1.2.0.update.json"
-sign_piped "${UNUSED_LINE}" "${SIGNING}/no-version/godot-mcp-toolkit-1.2.0.update.json" "${KEYS}/plain.pem" "${KEYS}/plain.pub.pem"
+printf 'stray\n' > "${SIGN_REPO}/stray"
+sign_piped "${UNUSED_LINE}" "${NEVER_READ}" v1.2.0 "${ZIP}" "${KEYS}/plain.pem"
+rm "${SIGN_REPO}/stray"
+sign_refused "check 3, an untracked file" "changed or untracked files"
+printf '\n' >> "${SIGN_REPO}/scripts/trust-document.sh"
+sign_piped "${UNUSED_LINE}" "${NEVER_READ}" v1.2.0 "${ZIP}" "${KEYS}/plain.pem"
+sign_git checkout -q -- scripts/trust-document.sh
+sign_refused "check 3, a changed script" "changed or untracked files"
+sign_git commit -q --allow-empty -m "never pushed"
+sign_piped "${UNUSED_LINE}" "${NEVER_READ}" v1.2.0 "${ZIP}" "${KEYS}/plain.pem"
+sign_git reset -q --hard "HEAD~1"
+sign_refused "check 3, a commit origin does not have" "not the tip of origin's main"
+
+sign_piped "${UNUSED_LINE}" "${NEVER_READ}" v1.6.0 "${ZIP}" "${KEYS}/plain.pem"
+sign_refused "check 4, a tag this checkout moved" "the tag v1.6.0 is $(commit_of v1.3.4) in this checkout and $(commit_of v1.3.5) on origin"
+sign_piped "${UNUSED_LINE}" "${NEVER_READ}" v1.5.0 "${ZIP}" "${KEYS}/plain.pem"
+sign_refused "check 4, a tag origin does not have" "origin has no tag v1.5.0"
+sign_piped "${UNUSED_LINE}" "${NEVER_READ}" v1.7.0 "${ZIP}" "${KEYS}/plain.pem"
+sign_refused "check 4, a tag this checkout does not have" "this checkout has no tag v1.7.0"
+
+sign_piped "${UNUSED_LINE}" "${NEVER_READ}" v1.4.0 "${ZIP}" "${KEYS}/plain.pem"
+sign_refused "check 5, a tag whose commit is not on main" "is not on origin's main"
+
+# v1.1.0 is the lightweight tag: reaching this refusal shows check 4 took its one line.
+sign_piped "${UNUSED_LINE}" "${NEVER_READ}" v1.1.0 "${ZIP}" "${KEYS}/plain.pem"
+sign_refused "check 6, a tag with no trust document" "holds no trust document"
+sign_piped "${UNUSED_LINE}" "${NEVER_READ}" v1.3.0 "${ZIP}" "${KEYS}/plain.pem"
+sign_refused "check 6, another first document than the pinned one" "the first trust document is pinned to $(rf_sha256 "${FIRST}")"
+sign_piped "${UNUSED_LINE}" "${NEVER_READ}" v1.3.1 "${ZIP}" "${KEYS}/encrypted.pem"
+sign_refused "check 6, a document no root signed" "trust-2.json at v1.3.1 does not verify against trust-1.json"
+sign_piped "${UNUSED_LINE}" "${NEVER_READ}" v1.3.2 "${ZIP}" "${KEYS}/encrypted.pem"
+sign_refused "check 6, a gap in the documents" "with no gap"
+sign_piped "${UNUSED_LINE}" "${NEVER_READ}" v1.3.3 "${ZIP}" "${KEYS}/encrypted.pem"
+sign_refused "check 6, a file named like a document" "trust/trust-01.json, which is named like a trust document"
+sign_piped "${UNUSED_LINE}" "${NEVER_READ}" v1.3.4 "${ZIP}" "${KEYS}/encrypted.pem"
+sign_refused "check 6, the toolkit embeds another document" "does not embed trust-2.json"
+
+: > "${NODE_REFUSES}"
+sign_piped "${UNUSED_LINE}" "${NEVER_READ}" v1.2.0 "${ZIP}" "${KEYS}/plain.pem"
+rm "${NODE_REFUSES}"
+sign_refused "check 7, a zip the zip check does not accept" "does not accept godot-mcp-toolkit-1.2.0.zip for v1.2.0"
+
+sign_piped "${UNUSED_LINE}" "${NEVER_READ}" v1.3.5 "${ZIP}" "${KEYS}/encrypted.pem"
+sign_refused "check 8, a tag the manifest cannot be written from" "could not read the manifest's fields from v1.3.5"
+
+sign_piped "${UNUSED_LINE}" "0000000g" v1.2.0 "${ZIP}" "${KEYS}/plain.pem"
+sign_refused "check 9, other digits than the commit's" "not the first 8 hex digits of the commit of v1.2.0"
+check "check 9, other digits than the commit's: what was typed is not shown" lacks "${OUT}" "0000000g"
+EIGHT_DIGITS="$(typed_for v1.2.0)"
+check "check 9, other digits than the commit's: the commit's own digits are not shown" lacks "${OUT}" "${EIGHT_DIGITS}"
+check "check 9: the page to read the commit on is named" contains "${OUT}" "open https://github.com/fixture/sign-repo/releases/tag/v1.2.0 and follow its commit link"
+sign_piped "${UNUSED_LINE}" "${EIGHT_DIGITS:0:7}" v1.2.0 "${ZIP}" "${KEYS}/plain.pem"
+sign_refused "check 9, seven of the eight digits" "not the first 8 hex digits of the commit of v1.2.0"
+sign_piped "${UNUSED_LINE}" "" v1.2.0 "${ZIP}" "${KEYS}/plain.pem"
+sign_refused "check 9, nothing typed" "not the first 8 hex digits of the commit of v1.2.0"
+
+sign_piped "${UNUSED_LINE}" "$(typed_for v1.2.0)" v1.2.0 "${ZIP}" "${KEYS}/unlisted.pem"
+check "check 10, a key that is no release key of the document at the tag fails" equals "${STATUS}" "1"
+check "check 10: the failure leaves no folder" equals "$(shared_folders)" "${SHARED_KEPT}"
+check "check 10: the failure leaves no scratch" equals "$(find "${SIGN_TMP}" -mindepth 1 | wc -l | tr -d ' ')" "0"
+check "check 10: the failure names the document and its tag" contains "${OUT}" "none of the 2 release keys of trust-1.json at v1.2.0"
+
+echo "── sign-release.sh: the trust document at the tag ──"
+# v1.2.1's highest document is trust-2, which dropped the plain key.
+sign_piped "${UNUSED_LINE}" "$(typed_for v1.2.1)" v1.2.1 "${ZIP}" "${KEYS}/plain.pem"
+check "a key the tag's newest document dropped is refused" equals "${STATUS}" "1"
+check "that refusal names the newest document" contains "${OUT}" "none of the 1 release keys of trust-2.json at v1.2.1"
+sign_piped "${PASSPHRASE}" "$(typed_for v1.2.1)" v1.2.1 "${ZIP}" "${KEYS}/encrypted.pem"
+NEWER_OUT="$(out_folder)"
+SHARED_KEPT=3
+check "the key that document keeps signs" equals "${STATUS}" "0"
+check "the release before is the highest lower version the commit reaches, not v1.10.0 on the same commit" contains "${OUT}" "Commits since v1.2.0 (1):"
+check "its folder is named for its tag" contains "${NEWER_OUT}" "${SHARED}/sign-release-v1.2.1."
+check "and holds that version's .sig" is_file "${NEWER_OUT}/godot-mcp-toolkit-1.2.1.update.json.sig"
+sign_verify "${NEWER_OUT}/godot-mcp-toolkit-1.2.1.update.json"
+check "--verify accepts it against trust-2" contains "${OUT}" "verifies under a release key of trust-2.json at v1.2.1"
+sign_verify "${PLAIN_OUT}/${MANIFEST_NAME}"
+check "an older release still verifies against the document at its own tag" equals "${STATUS}" "0"
+sign_verify "${ENCRYPTED_OUT}/${MANIFEST_NAME}"
+check "--verify accepts a .sig by the document's second release key" equals "${STATUS}" "0"
+
+# Gives a new folder, $1, the signed manifest with its version changed to $2, under that
+# version's name.
+make_versioned_case() {
+  mkdir -p "${SIGNING}/$1"
+  sed "s/\"version\": \"1.2.0\"/\"version\": \"$2\"/" "${WORK}/signed.expected" > "${SIGNING}/$1/godot-mcp-toolkit-$2.update.json"
+}
+# Signs the manifest $1 with the key $2 and openssl alone, so --verify alone judges it.
+sign_directly() {
+  openssl dgst -sha256 -sign "$2" -passin "pass:${PASSPHRASE}" -out "$1.sig" "$1" </dev/null
+}
+
+mkdir -p "${SIGNING}/changed" "${SIGNING}/renamed" "${SIGNING}/path-named" "${SIGNING}/no-version"
+sed 's/"archive_size": 3/"archive_size": 4/' "${PLAIN_OUT}/${MANIFEST_NAME}" > "${SIGNING}/changed/${MANIFEST_NAME}"
+cp "${PLAIN_OUT}/${SIG_NAME}" "${SIGNING}/changed/${SIG_NAME}"
+sign_verify "${SIGNING}/changed/${MANIFEST_NAME}"
+check "--verify rejects a one-byte change" equals "$([[ "${STATUS}" -ne 0 ]] && echo failed || echo passed)" "failed"
+
+cp "${PLAIN_OUT}/${MANIFEST_NAME}" "${SIGNING}/renamed/some-other-name.json"
+cp "${PLAIN_OUT}/${SIG_NAME}" "${SIGNING}/renamed/${SIG_NAME}"
+sign_verify "${SIGNING}/renamed/some-other-name.json"
+check "--verify finds the .sig by the manifest's version, whatever the manifest's own name" equals "${STATUS}" "0"
+cp "${PLAIN_OUT}/${MANIFEST_NAME}" "${SIGNING}/path-named/some-other-name.json"
+cp "${PLAIN_OUT}/${SIG_NAME}" "${SIGNING}/path-named/some-other-name.json.sig"
+sign_verify "${SIGNING}/path-named/some-other-name.json"
+check "--verify does not take a .sig named after the manifest's path" contains "${OUT}" "no signature at ${SIGNING}/path-named/${SIG_NAME}"
+
+printf '{"format": 1, "version": "../../evil"}\n' > "${SIGNING}/no-version/${MANIFEST_NAME}"
+sign_verify "${SIGNING}/no-version/${MANIFEST_NAME}"
 check "a version that is no version is refused" equals "${STATUS}" "1"
 check "the refusal says the version is the problem" contains "${OUT}" "no usable version"
 
-run bash "${SIGN}" --verify "${SIGNING}/plain/godot-mcp-toolkit-1.2.0.update.json" "${KEYS}/plain.pub.pem"
-check "--verify accepts the signed manifest" equals "${STATUS}" "0"
-sed 's/"archive_size": 3/"archive_size": 4/' "${SIGNING}/plain/godot-mcp-toolkit-1.2.0.update.json" > "${SIGNING}/plain/changed.tmp"
-mv "${SIGNING}/plain/changed.tmp" "${SIGNING}/plain/godot-mcp-toolkit-1.2.0.update.json"
-run bash "${SIGN}" --verify "${SIGNING}/plain/godot-mcp-toolkit-1.2.0.update.json" "${KEYS}/plain.pub.pem"
-check "--verify rejects a one-byte change" equals "$([[ "${STATUS}" -ne 0 ]] && echo failed || echo passed)" "failed"
+make_versioned_case no-sig 1.2.0
+sign_verify "${SIGNING}/no-sig/${MANIFEST_NAME}"
+check "--verify with no .sig is refused" equals "${STATUS}" "1"
+check "that refusal says so" contains "${OUT}" "no signature at"
 
-run bash "${SIGN}" --key-entry "${KEYS}/plain.pub.pem"
-ENTRY="${OUT}"
-check "--key-entry prints one line" equals "$(printf '%s\n' "${ENTRY}" | wc -l | tr -d ' ')" "1"
-check "--key-entry opens a quoted escaped PEM" contains "${ENTRY}" '"-----BEGIN PUBLIC KEY-----\n'
-check "--key-entry closes it" contains "${ENTRY}" '-----END PUBLIC KEY-----\n"'
-printf '%b' "$(printf '%s' "${ENTRY}" | tr -d '"')" > "${WORK}/entry.pem"
-tr -d '\r' < "${KEYS}/plain.pub.pem" > "${WORK}/plain.lf.pem"
-check "--key-entry unescapes to the key" same_bytes "${WORK}/entry.pem" "${WORK}/plain.lf.pem"
-run bash "${SIGN}" --key-entry "${KEYS}/ec.pub.pem"
-check "--key-entry refuses an EC key, which signing would refuse" equals "${STATUS}" "1"
-check "that refusal says RSA" contains "${OUT}" "not an RSA key"
-check "that refusal prints no key" lacks "${OUT}" "BEGIN PUBLIC KEY"
-run bash "${SIGN}" --key-entry "${WORK}/manifest.expected"
-check "--key-entry refuses a file that is no PEM key" equals "${STATUS}" "1"
-check "that refusal says so" contains "${OUT}" "not a PEM public key"
+make_versioned_case unlisted 1.2.0
+sign_directly "${SIGNING}/unlisted/${MANIFEST_NAME}" "${KEYS}/unlisted.pem"
+sign_verify "${SIGNING}/unlisted/${MANIFEST_NAME}"
+check "--verify refuses a .sig by a key the document does not list" equals "${STATUS}" "1"
+check "that refusal names the document" contains "${OUT}" "none of the 2 release keys of trust-1.json at v1.2.0"
+
+make_versioned_case no-document 1.1.0
+sign_directly "${SIGNING}/no-document/godot-mcp-toolkit-1.1.0.update.json" "${KEYS}/plain.pem"
+sign_verify "${SIGNING}/no-document/godot-mcp-toolkit-1.1.0.update.json"
+check "a tag with no trust document is refused" equals "${STATUS}" "1"
+check "that refusal says so" contains "${OUT}" "holds no trust document"
+make_versioned_case no-tag 9.9.9
+sign_directly "${SIGNING}/no-tag/godot-mcp-toolkit-9.9.9.update.json" "${KEYS}/plain.pem"
+sign_verify "${SIGNING}/no-tag/godot-mcp-toolkit-9.9.9.update.json"
+check "a version with no tag is refused" equals "${STATUS}" "1"
+check "that refusal names the tag" contains "${OUT}" "no tag v9.9.9"
+
+# Each .sig below is by a key the tag's highest document lists, so only the check of the
+# tag's documents stands between it and a pass.
+make_versioned_case broken-chain 1.3.1
+sign_directly "${SIGNING}/broken-chain/godot-mcp-toolkit-1.3.1.update.json" "${KEYS}/encrypted.pem"
+sign_verify "${SIGNING}/broken-chain/godot-mcp-toolkit-1.3.1.update.json"
+check "--verify refuses when a document at the tag is not signed by a root" equals "${STATUS}" "1"
+check "that refusal names the broken link" contains "${OUT}" "trust-2.json at v1.3.1 does not verify against trust-1.json"
+make_versioned_case other-first 1.3.0
+sign_directly "${SIGNING}/other-first/godot-mcp-toolkit-1.3.0.update.json" "${KEYS}/plain.pem"
+sign_verify "${SIGNING}/other-first/godot-mcp-toolkit-1.3.0.update.json"
+check "--verify refuses when the tag's first document is not the pinned one" equals "${STATUS}" "1"
+check "that refusal names the pin" contains "${OUT}" "the first trust document is pinned to"
+make_versioned_case other-embedded 1.3.4
+sign_directly "${SIGNING}/other-embedded/godot-mcp-toolkit-1.3.4.update.json" "${KEYS}/encrypted.pem"
+sign_verify "${SIGNING}/other-embedded/godot-mcp-toolkit-1.3.4.update.json"
+check "--verify refuses when the toolkit at the tag embeds another document" equals "${STATUS}" "1"
+check "that refusal names the document the toolkit should embed" contains "${OUT}" "does not embed trust-2.json"
+run env TMPDIR="${SIGN_TMP}" GIT_DIR="${SIGN_REPO}/.git" bash "${SIGN}" --verify "${PLAIN_OUT}/${MANIFEST_NAME}"
+check "--verify refuses while GIT_DIR is set" equals "${STATUS}" "1"
+check "that refusal names the variable" contains "${OUT}" "GIT_DIR is set"
+
+echo "── sign-release.sh: what is shown, and where a signature is left ──"
+# More states, made and pushed only here so that no run above meets them. v1.3.6 gives
+# back the Godot floor v1.3.5 took, in a commit whose subject holds an escape sequence and
+# a two-byte character; the subject goes in through a file, as bytes. v1.3.8 has the
+# release tag before it, v1.3.7, on its own commit. v1.0.0 sits on the commit of v1.2.0,
+# which no release tag of a lower version reaches.
+printf 'const GODOT_MIN_VERSION := "4.2"\nconst COMPATIBLE_SERVER_VERSION := "1.3.0"\n' > "${SIGN_REPO}/${CONSTANT_FILE}"
+printf 'a subject \033[2J with \303\251 in it\n' > "${WORK}/subject"
+sign_git add -A .
+sign_git commit -q -F "${WORK}/subject"
+sign_git tag -a -m v1.3.6 v1.3.6
+tag_state v1.3.8
+sign_git tag -a -m v1.3.7 v1.3.7 "$(commit_of v1.3.8)"
+sign_git tag -a -m v1.0.0 v1.0.0 "$(commit_of v1.2.0)"
+sign_git push -q origin main refs/tags/v1.3.6 refs/tags/v1.3.7 refs/tags/v1.3.8 refs/tags/v1.0.0
+
+sign_piped "${PASSPHRASE}" "$(typed_for v1.3.6)" v1.3.6 "${ZIP}" "${KEYS}/encrypted.pem"
+SHARED_KEPT=4
+check "a subject with an escape sequence: signed" equals "${STATUS}" "0"
+check "the subject is shown with a question mark for each byte that is not printable ASCII" contains "${OUT}" "Subject  a subject ?[2J with ?? in it"
+check "and so is its line in the list of commits, which carries no commit's name" contains "${OUT}" "Commits since v1.3.5 (1):"$'\n'"  a subject ?[2J with ?? in it"
+check "no escape reaches the terminal from a subject" lacks "${OUT}" $'\033'
+
+printf 'an entry \033[2J the zip names\n' > "${NODE_SAYS}"
+sign_piped "${UNUSED_LINE}" "$(typed_for v1.2.0)" v1.2.0 "${ZIP}" "${KEYS}/plain.pem"
+rm "${NODE_SAYS}"
+SHARED_KEPT=5
+check "a zip check that prints an escape sequence: signed" equals "${STATUS}" "0"
+check "what the zip check prints is shown with a question mark for the escape" contains "${OUT}" "an entry ?[2J the zip names"
+check "and so is what it prints on stderr" contains "${OUT}" "on stderr: an entry ?[2J the zip names"
+check "no escape reaches the terminal from the zip check" lacks "${OUT}" $'\033'
+
+# git ls-remote matches a pattern against the tail of a ref's name, so origin answers for
+# main and for v1.2.0 with these two refs as well, which name another commit.
+sign_git push -q origin "$(commit_of v1.1.0):refs/heads/a/refs/heads/main" "$(commit_of v1.1.0):refs/tags/a/refs/tags/v1.2.0"
+check "origin answers for main with a second ref" equals "$(git -C "${SIGN_REPO}" ls-remote origin refs/heads/main | wc -l | tr -d ' ')" "2"
+check "origin answers for v1.2.0 with a second ref" contains "$(git -C "${SIGN_REPO}" ls-remote origin refs/tags/v1.2.0)" "refs/tags/a/refs/tags/v1.2.0"
+sign_piped "${UNUSED_LINE}" "$(typed_for v1.2.0)" v1.2.0 "${ZIP}" "${KEYS}/plain.pem"
+sign_git push -q origin ":refs/heads/a/refs/heads/main" ":refs/tags/a/refs/tags/v1.2.0"
+SHARED_KEPT=6
+check "refs whose names only end like the branch's and the tag's do not stand in for them" equals "${STATUS}" "0"
+
+sign_piped "${PASSPHRASE}" "${NEVER_READ}" v1.3.8 "${ZIP}" "${KEYS}/encrypted.pem"
+sign_refused "check 9, the release tag before on the tag's own commit" "v1.3.7, the release tag before v1.3.8, is on the commit of v1.3.8 itself"
+
+sign_piped "${UNUSED_LINE}" "$(typed_for v1.0.0)" v1.0.0 "${ZIP}" "${KEYS}/plain.pem"
+SHARED_KEPT=7
+check "a tag no lower release tag reaches: signed" equals "${STATUS}" "0"
+check "it is shown with no release before it" contains "${OUT}" "Before   no release tag"
+check "every commit it reaches is counted" contains "${OUT}" "Commits with no release tag before it (2):"
+check "and its trust document counts as a change" contains "${OUT}" "trust/trust-1.json"
+
+# The folder a signature is left in, as the stand-in ls reports it: root's with no sticky
+# bit, another account's, this account's with write for the group or for everyone and no
+# sticky bit, then root's with the sticky bit, which /Users/Shared is.
+OUT_ROOT_REFUSAL="is neither this account's own and closed to other accounts nor root's or this account's with the sticky bit set"
+printf 'drwxrwxrwx 2 0 0 64 Jan  1 00:00 .\n' > "${LS_SAYS}"
+sign_piped "${UNUSED_LINE}" "${NEVER_READ}" v1.2.0 "${ZIP}" "${KEYS}/plain.pem"
+sign_refused "a hand-over folder of root's with no sticky bit" "${SHARED} ${OUT_ROOT_REFUSAL}"
+printf 'drwxrwxrwt 2 %s 0 64 Jan  1 00:00 .\n' "$(($(id -u) + 1))" > "${LS_SAYS}"
+sign_piped "${UNUSED_LINE}" "${NEVER_READ}" v1.2.0 "${ZIP}" "${KEYS}/plain.pem"
+sign_refused "a hand-over folder of another account's" "${SHARED} ${OUT_ROOT_REFUSAL}"
+printf 'drwxrwxr-x 2 %s 0 64 Jan  1 00:00 .\n' "$(id -u)" > "${LS_SAYS}"
+sign_piped "${UNUSED_LINE}" "${NEVER_READ}" v1.2.0 "${ZIP}" "${KEYS}/plain.pem"
+sign_refused "a hand-over folder of this account's its group may write to" "${SHARED} ${OUT_ROOT_REFUSAL}"
+printf 'drwxr-xrwx 2 %s 0 64 Jan  1 00:00 .\n' "$(id -u)" > "${LS_SAYS}"
+sign_piped "${UNUSED_LINE}" "${NEVER_READ}" v1.2.0 "${ZIP}" "${KEYS}/plain.pem"
+sign_refused "a hand-over folder of this account's everyone may write to" "${SHARED} ${OUT_ROOT_REFUSAL}"
+printf 'drwxrwxrwt 2 0 0 64 Jan  1 00:00 .\n' > "${LS_SAYS}"
+sign_piped "${UNUSED_LINE}" "$(typed_for v1.2.0)" v1.2.0 "${ZIP}" "${KEYS}/plain.pem"
+rm "${LS_SAYS}"
+SHARED_KEPT=8
+check "a hand-over folder of root's with the sticky bit takes the signature" equals "${STATUS}" "0"
+
+echo "── sign-release.sh: usage ──"
 run bash "${SIGN}" --help
 check "the usage does not say where keys live" lacks "${OUT}" "embedded_trust_document"
-check "the usage names the three-argument form" contains "${OUT}" "<manifest> <private-key.pem> <public-key.pem>"
-run bash "${SIGN}" "${SIGNING}/renamed/some-other-name.json" "${KEYS}/plain.pem"
-check "two arguments no longer sign" equals "${STATUS}" "2"
+check "the usage names the three-argument form" contains "${OUT}" "scripts/sign-release.sh <tag> <zip> <private-key.pem>"
+check "the usage names no public key to pass" lacks "${OUT}" "<public-key.pem>"
+SIGN_ENV=()
+sign_piped "${UNUSED_LINE}" "${NEVER_READ}" v1.2.0 "${ZIP}" "${KEYS}/plain.pem" "${KEYS}/plain.pub.pem"
+check "a fourth argument is wrong usage" equals "${STATUS}" "2"
+sign_piped "${UNUSED_LINE}" "${NEVER_READ}" "${PLAIN_OUT}/${MANIFEST_NAME}" "${KEYS}/plain.pem"
+check "a manifest and a key, with no tag, is wrong usage" equals "${STATUS}" "2"
+sign_piped "${UNUSED_LINE}" "${NEVER_READ}" v1.2.0 "${ZIP}" "${KEYS}/no-such-key.pem"
+check "a key file that is not there is refused" equals "${STATUS}" "1"
+check "that refusal says so" contains "${OUT}" "no key at"
+sign_piped "${UNUSED_LINE}" "${NEVER_READ}" v1.2.0 "${SIGNING}/no-such.zip" "${KEYS}/plain.pem"
+check "a zip that is not there is refused" equals "${STATUS}" "1"
+check "that refusal says so" contains "${OUT}" "no zip at"
+sign_piped "${UNUSED_LINE}" "${NEVER_READ}" 1.2.0 "${ZIP}" "${KEYS}/plain.pem"
+check "a version where the tag belongs is refused" equals "${STATUS}" "1"
+check "that refusal says so" contains "${OUT}" "is no release tag"
+SIGN_ENV=("SIGN_RELEASE_OUT_ROOT=${WORK}/no-such-folder")
+sign_piped "${UNUSED_LINE}" "${NEVER_READ}" v1.2.0 "${ZIP}" "${KEYS}/plain.pem"
+SIGN_ENV=()
+check "a hand-over folder that is not there is a setup error" equals "${STATUS}" "2"
+check "and none is made" no_file "${WORK}/no-such-folder"
+run bash "${SIGN}" --key-entry "${KEYS}/plain.pub.pem"
+check "--key-entry is not a command" equals "${STATUS}" "2"
+sign_verify "${SIGNING}/renamed/some-other-name.json" "${KEYS}/plain.pub.pem"
+check "--verify takes no public key" equals "${STATUS}" "2"
+
+check "no run started gh" no_file "${GH_LOG}"
+check "the good runs left only their folders for the other account" equals "$(shared_folders)" "${SHARED_KEPT}"
+check "no run left scratch behind" equals "$(find "${SIGN_TMP}" -mindepth 1 | wc -l | tr -d ' ')" "0"
+PATH="${ORIGINAL_PATH}"
 
 echo "── check_release_files.sh ──"
 CHECK="${REPO_ROOT}/scripts/check_release_files.sh"

@@ -30,6 +30,10 @@
 #       roots. Keys count once each, by the SHA-256 of their DER.
 #   scripts/trust-document.sh show <document>
 #       print the decoded document
+#   scripts/trust-document.sh release-keys <document>
+#       print each release key of <document> as a PEM block, in the document's order,
+#       refusing a file that is no document or a key that is no RSA public key. It checks no
+#       signature: verify does.
 #
 # Exit 0 = done, 1 = refused, 2 = wrong usage.
 set -euo pipefail
@@ -557,8 +561,24 @@ show_document() {
   cat "${WORK}/document.decoded"
 }
 
+# Every key is checked before the first is printed, so a refusal prints no key. Each PEM comes
+# out in one layout, ended by a line break, so the blocks never run together.
+print_release_keys() {
+  [[ $# -eq 1 ]] || { usage >&2; exit 2; }
+  local line
+  read_envelope "$1" "${WORK}/document.decoded"
+  read_body "${WORK}/document.decoded" "$1"
+  distinct_keys "${BODY_RELEASES}" release > /dev/null
+  while IFS= read -r line; do
+    [[ -n "${line}" ]] || continue
+    pem_of_entry "${line}" > "${WORK}/listed.pem"
+    openssl pkey -pubin -in "${WORK}/listed.pem" -pubout -out "${WORK}/uniform.pem" 2>/dev/null
+    tr -d '\r' < "${WORK}/uniform.pem"
+  done <<< "${BODY_RELEASES}"
+}
+
 case "${1:-}" in
-  build|sign|verify|show) ;;
+  build|sign|verify|show|release-keys) ;;
   -h|--help|"")
     usage
     exit 0
@@ -582,4 +602,5 @@ case "${COMMAND}" in
   sign) sign_document "$@" ;;
   verify) verify_document "$@" ;;
   show) show_document "$@" ;;
+  release-keys) print_release_keys "$@" ;;
 esac
