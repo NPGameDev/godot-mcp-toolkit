@@ -512,7 +512,7 @@ identity (name/path pairs + the `autoload/<name>` = `*<path>` derivation) lives 
 leaf (`core/autoload_identity.gd`) that both the registration module and the export-strip plugin
 preload, so the two share one SSOT without coupling to each other.
 
-<!-- data-depicts="addons/godot_mcp_toolkit/plugin.gd addons/godot_mcp_toolkit/core/plugin_composer.gd addons/godot_mcp_toolkit/core/autoload_registration.gd addons/godot_mcp_toolkit/core/autoload_identity.gd addons/godot_mcp_toolkit/ui/mcp_json_write_flow.gd addons/godot_mcp_toolkit/ui/toolkit_dialog_presenter.gd addons/godot_mcp_toolkit/transport/builtin_command_registration.gd addons/godot_mcp_toolkit/transport/mcp_server.gd addons/godot_mcp_toolkit/transport/debug_session_tracker.gd addons/godot_mcp_toolkit/transport/debug_bridge.gd addons/godot_mcp_toolkit/core/remote_deploy_detector.gd addons/godot_mcp_toolkit/self_update/update_installer.gd addons/godot_mcp_toolkit/self_update/update_lifecycle.gd addons/godot_mcp_toolkit/ui/mcp_json/server_pin_move.gd addons/godot_mcp_toolkit/self_update/recovery_files.gd addons/godot_mcp_toolkit/self_update/recovery/recovery_plugin.gd addons/godot_mcp_toolkit/self_update/recovery/recovery_journal.gd" data-verified="ffe0ab2" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/plugin.gd addons/godot_mcp_toolkit/core/plugin_composer.gd addons/godot_mcp_toolkit/core/autoload_registration.gd addons/godot_mcp_toolkit/core/autoload_identity.gd addons/godot_mcp_toolkit/ui/mcp_json_write_flow.gd addons/godot_mcp_toolkit/ui/toolkit_dialog_presenter.gd addons/godot_mcp_toolkit/transport/builtin_command_registration.gd addons/godot_mcp_toolkit/transport/mcp_server.gd addons/godot_mcp_toolkit/transport/debug_session_tracker.gd addons/godot_mcp_toolkit/transport/debug_bridge.gd addons/godot_mcp_toolkit/core/remote_deploy_detector.gd addons/godot_mcp_toolkit/self_update/update_installer.gd addons/godot_mcp_toolkit/self_update/update_lifecycle.gd addons/godot_mcp_toolkit/ui/mcp_json/server_pin_move.gd addons/godot_mcp_toolkit/self_update/recovery_files.gd addons/godot_mcp_toolkit/self_update/recovery/recovery_plugin.gd addons/godot_mcp_toolkit/self_update/recovery/recovery_journal.gd" data-verified="49dabe6" -->
 ```mermaid
 flowchart TD
     plugin["plugin.gd<br/>_enter_tree / _exit_tree (thin)"]
@@ -547,7 +547,7 @@ flowchart TD
     plugin -.->|"_exit_tree → Handle.dispose() — reverse order"| composer
     plugin -.->|"_exit_tree after dispose, unless disabling"| apply["UpdateLifecycle.apply_at_exit()<br/>(swaps a staged update in · never in a headless editor)"]
 ```
-*Figure 10 — plugin composition root · verified ffe0ab2*
+*Figure 10 — plugin composition root · verified 49dabe6*
 
 The composer builds in a behaviour-critical order: registry and server first, then the
 debug-session tracker and the debugger plugin that feeds it, then all built-in commands, then
@@ -766,7 +766,7 @@ The toolkit assumes a **single local user with a human at the editor**; the boun
 localhost + token, not a defence against an adversary who can already write project files.
 Within that model, several layers keep an LLM's requests honest.
 
-<!-- data-depicts="addons/godot_mcp_toolkit/security/auth.gd addons/godot_mcp_toolkit/security/file_guard.gd addons/godot_mcp_toolkit/security/audit.gd addons/godot_mcp_toolkit/security/untrusted.gd addons/godot_mcp_toolkit/security/scrubber.gd addons/godot_mcp_toolkit/transport/mcp_toolkit_command_registry.gd addons/godot_mcp_toolkit/self_update/release_signature.gd addons/godot_mcp_toolkit/self_update/trust_chain.gd addons/godot_mcp_toolkit/self_update/embedded_trust_document.gd addons/godot_mcp_toolkit/self_update/release_manifest.gd addons/godot_mcp_toolkit/self_update/release_file_list.gd addons/godot_mcp_toolkit/self_update/release_archive.gd addons/godot_mcp_toolkit/self_update/release_assets.gd addons/godot_mcp_toolkit/self_update/update_downloader.gd addons/godot_mcp_toolkit/self_update/install_guards.gd addons/godot_mcp_toolkit/self_update/install_mode.gd addons/godot_mcp_toolkit/self_update/update_installer.gd addons/godot_mcp_toolkit/self_update/update_applier.gd addons/godot_mcp_toolkit/core/consent.gd addons/godot_mcp_toolkit/self_update/recovery_files.gd" data-verified="ffe0ab2" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/security/auth.gd addons/godot_mcp_toolkit/security/file_guard.gd addons/godot_mcp_toolkit/security/audit.gd addons/godot_mcp_toolkit/security/untrusted.gd addons/godot_mcp_toolkit/security/scrubber.gd addons/godot_mcp_toolkit/transport/mcp_toolkit_command_registry.gd addons/godot_mcp_toolkit/self_update/release_signature.gd addons/godot_mcp_toolkit/self_update/trust_chain.gd addons/godot_mcp_toolkit/self_update/embedded_trust_document.gd addons/godot_mcp_toolkit/self_update/release_manifest.gd addons/godot_mcp_toolkit/self_update/release_file_list.gd addons/godot_mcp_toolkit/self_update/release_archive.gd addons/godot_mcp_toolkit/self_update/release_assets.gd addons/godot_mcp_toolkit/self_update/update_downloader.gd addons/godot_mcp_toolkit/self_update/install_guards.gd addons/godot_mcp_toolkit/self_update/install_mode.gd addons/godot_mcp_toolkit/self_update/update_installer.gd addons/godot_mcp_toolkit/self_update/update_applier.gd addons/godot_mcp_toolkit/core/consent.gd addons/godot_mcp_toolkit/self_update/recovery_files.gd" data-verified="49dabe6" -->
 ```mermaid
 flowchart TD
     llm["LLM-authored request"] --> token{"valid token?<br/>(first frame)"}
@@ -778,7 +778,7 @@ flowchart TD
     deny --> handler["command handler"]
     handler --> wrap["read paths → Untrusted.wrap + Scrubber.scrub"]
 ```
-*Figure 13 — request trust boundaries · verified ffe0ab2*
+*Figure 13 — request trust boundaries · verified 49dabe6*
 
 - **FileGuard** (`security/file_guard.gd`) is the path keystone: `resolve_safe` confines writes
   to `res://` (rejecting `..` traversal and absolute OS paths via a globalize → simplify →
@@ -821,7 +821,8 @@ flowchart TD
   signature, not the host. A release counts only when its update manifest is signed by a release
   key the latest trust document lists (`self_update/release_signature.gd`). The chain starts at
   the document the installed release embeds (`self_update/embedded_trust_document.gd`); each next
-  document must be signed by enough of the previous one's root keys, and the ones accepted are
+  document is an asset of the release being verified, fetched from it
+  (`self_update/release_verifier.gd`), and must be signed by enough of the previous one's root keys, and the ones accepted are
   stored per machine in the OS's data folder, outside the project, and verified again from the
   embedded one on every load (`self_update/trust_chain.gd`; the procedures are in
   [`docs/dev/trust-chain.md`](../dev/trust-chain.md)). The manifest pins the zip by size and
@@ -829,7 +830,7 @@ flowchart TD
   file list inside the zip, `release_files.sha256`, says what the stage must hold
   (`self_update/release_file_list.gd`), and `self_update/release_archive.gd` refuses a zip with an
   entry outside the addon folder or a file the list does not name. Every URL is built from the
-  version or the document's number alone (`self_update/release_assets.gd`), and
+  version, and a trust document's from its number too, never from a reply (`self_update/release_assets.gd`), and
   `self_update/update_downloader.gd` follows each redirect by hand, over HTTPS, only to
   `github.com` or a `githubusercontent.com` host other than `raw.githubusercontent.com`, at most
   five hops; that narrows where a request goes, while the signature and hash decide what is used.

@@ -21,10 +21,10 @@ extends Node
 ## [code]update_notice.gd[/code]).[br]
 ## [br]
 ## Just before a verify, and on every click on Update, the verifier walks the trust chain,
-## fetching the trust documents this machine lacks. A failed check leaves [constant IDLE]
-## with [method note_text] saying what failed, and a click retries it
-## ([method can_retry_check]). A failed download after a click goes to [constant FAILED].
-## While an update is staged no check runs.[br]
+## fetching the trust documents this machine lacks from the release of [method version]. A
+## failed check leaves [constant IDLE] with [method note_text] saying what failed, and a
+## click retries it ([method can_retry_check]). A failed download after a click goes to
+## [constant FAILED]. While an update is staged no check runs.[br]
 ## [br]
 ## When staging ends, the restart gate (see [code]restart_gate.gd[/code]) restarts the
 ## editor or opens the ready view, which [method ready_view] reports.[br]
@@ -562,7 +562,7 @@ func _start_walk() -> void:
 	if check_failed():
 		_set_state(_state)
 	_waiting = _WAITING_VERIFIER
-	_verifier.walk()
+	_verifier.walk(_version)
 
 
 # The walk moved the chain, so what was verified before it is verified again. A kept release
