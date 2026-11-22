@@ -218,8 +218,9 @@ tag, so a stray experimental `v*` tag would ride along and fire the release gate
 ## The toolkit's publish ritual
 
 The toolkit's release is published from the maintainer's machine by
-`scripts/publish-release.sh`, one step per call, with the maintainer's
-`scripts/sign-release.sh` between two of them. Each `publish-release.sh` step
+`scripts/publish-release.sh`, one step per call, with the maintainer's sign
+(`scripts/sign-release.sh`, run through `~/sign/release-sign`) between two of
+them. Each `publish-release.sh` step
 refuses unless the one before it is done. `check` and `attach` each leave a
 record in `dist-plugin/release-<tag>/`, beside the files `check` passed. The
 records only keep the steps in order: `publish` checks again what it reads
@@ -248,16 +249,24 @@ Every step first refuses when a variable that would aim `git`, `gh`, `node` or
    (`PUBLISH_RELEASE_HANDOFF_ROOT` names another parent), and prints the sign
    command. It refuses when a release for the tag is already on GitHub, and
    while a folder that an earlier draft of the tag left there, owned by the
-   same account, remains: remove it first, so the signing account finds one zip
-   for the tag. A draft is invisible to the public.
+   same account, remains: it prints the `rm -r` line that removes it, so the
+   signing account finds one zip for the tag. A draft is invisible to the
+   public.
 3. The sign (*maintainer*), typed in a separate admin account that holds the
-   release key and runs no coding agent, from a fresh anonymous clone of
-   `main`:
-   `scripts/sign-release.sh vX.Y.Z <zip> <private-key.pem>`.
-   It first refuses a tag that is not `vX.Y.Z`, a missing zip or key, and a
-   folder for the signature that fails the rule below. It then copies the zip,
-   and reads nothing else it is handed but the key. After that it refuses, in
-   this order, when:
+   release key and runs no coding agent, from that account's own login
+   session: `~/sign/release-sign vX.Y.Z`, the command `draft` prints.
+   `release-sign` is a wrapper the maintainer installs once in that account.
+   It makes a fresh anonymous clone of `main`, refuses while anything under
+   `scripts/` differs from the commit the maintainer last reviewed
+   (`~/sign/release-sign review` shows the change and records the new one),
+   picks the one zip `draft` left, and runs the clone's
+   `scripts/sign-release.sh vX.Y.Z <zip> <key>` with only `HOME`, a fixed
+   `PATH` and `TERM` in its environment.
+
+   The script first refuses a tag that is not `vX.Y.Z`, a missing zip or key,
+   and a folder for the signature that fails the rule below. It then copies
+   the zip, and reads nothing else it is handed but the key. After that it
+   refuses, in this order, when:
    - a variable that aims `git`, `gh`, `node` or `openssl` elsewhere is set
      (`scripts/lib/release_checks.sh` lists them);
    - `origin` is not the pinned URL;
@@ -285,7 +294,9 @@ Every step first refuses when a variable that would aim `git`, `gh`, `node` or
    in a new folder, `sign-release-vX.Y.Z.<random>` under `/Users/Shared`
    (`SIGN_RELEASE_OUT_ROOT` names another parent, which must be that account's
    own with no write for group or others, or root's or that account's with
-   the sticky bit set). The last line printed is `OUT <folder>`.
+   the sticky bit set; `release-sign` passes no such variable, so through it
+   the folder is always under `/Users/Shared`). The last line printed is
+   `OUT <folder>`.
 4. `scripts/publish-release.sh attach vX.Y.Z [<folder>]` (*agent*) takes the
    manifest and the `.sig` from the sign's folder, and neither file may be a
    symlink. With no folder named it looks under `/Users/Shared`, or under
@@ -325,6 +336,37 @@ Every step first refuses when a variable that would aim `git`, `gh`, `node` or
    is found only by the checks after the publish, on a release that can no
    longer change. Run again on a release it has already published, `publish`
    publishes nothing and repeats the checks.
+
+No step deletes anything. When a step can go on only after a delete, it
+refuses, prints the exact command under "The maintainer types this; no step
+here runs it:" and names the step to run after it. The guard on the
+maintainer's machines refuses `gh release delete` and
+`gh release delete-asset` from a coding agent, so the maintainer types each
+one. The command is one of these:
+
+```sh
+gh release delete vX.Y.Z --repo NPGameDev/godot-mcp-toolkit --yes
+gh release delete-asset vX.Y.Z godot-mcp-toolkit-<version>.update.json.sig --repo NPGameDev/godot-mcp-toolkit --yes
+rm -r -- /Users/Shared/publish-release-vX.Y.Z.<random>
+```
+
+- `gh release delete` deletes the tag's draft when a draft already carries
+  the tag (`check`, `draft`), when its zip and manifest are not the checked
+  ones (`attach`), or when one of its trust documents is not the tag's
+  (`attach`, `publish`). Then `draft` runs again, or `check` when `check`
+  refused. When several drafts carry the tag, the line deletes one each time
+  and is typed once per draft.
+- `gh release delete-asset` removes the draft's `.sig` when it is not the one
+  in the sign's folder (`attach`). Then `attach` runs again.
+- `rm -r` removes a hand-off folder an earlier draft of the tag left
+  (`draft`), with the zip in it. Then `draft` runs again.
+
+A published release is never offered for deletion. When the release that
+carries the tag is published, or a trust document of a published release is
+not the tag's, the step refuses with no command. When a published release
+and a draft share the tag, it prints none either: `gh release delete` by tag
+would take the published one, so the maintainer deletes the draft on
+GitHub's releases page.
 
 A release whose tag holds a new trust document takes the same five steps: the
 document is one of the release's assets, so it goes public with the release.

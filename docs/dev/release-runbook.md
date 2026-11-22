@@ -305,8 +305,8 @@ The tag run takes about an hour. Then publish from your machine with `scripts/pu
 gh run watch <the tag's release.yml run>
 bash scripts/publish-release.sh check v<version>
 bash scripts/publish-release.sh draft v<version>
-# The sign: in the admin account, from a fresh anonymous clone of the toolkit's main.
-bash scripts/sign-release.sh v<version> <the zip draft handed over> <private-key.pem>
+# The sign: in the admin account's own login session, the line draft prints.
+~/sign/release-sign v<version>
 bash scripts/publish-release.sh attach v<version>
 gh release edit v<version> --notes-file <merged-changelog.md>
 bash scripts/publish-release.sh publish v<version>
@@ -314,7 +314,10 @@ bash scripts/publish-release.sh publish v<version>
 
 The sign is the one step in another account: a separate admin account that holds the release key and
 runs no coding agent. `draft` leaves the zip in a new folder under `/Users/Shared` and prints the sign
-command; the sign leaves the manifest and its `.sig` in another, which `attach` finds by the tag. The
+command; the sign leaves the manifest and its `.sig` in another, which `attach` finds by the tag.
+`release-sign` clones the toolkit's `main` afresh, refuses while `scripts/` differs from the commit you
+last reviewed, and runs the clone's `scripts/sign-release.sh` on the zip `draft` left. When it refuses
+because `scripts/` changed, run `~/sign/release-sign review`, read the change, then sign again. The
 sign shows what the tag would release but not its commit, and asks for the first 8 hex digits of the
 commit as the tag's page on github.com shows it.
 
@@ -326,11 +329,13 @@ documents with the zip, and they go public with the release.
 `publish` ends by printing the line for `trust/released-manifests.txt`. Add it through a pull request
 from `chore/ledger-<version>`.
 
-A step that refuses names what is missing. Until `publish`, nothing is public: if the draft went
-wrong, delete it, remove the folder `draft` left under `/Users/Shared` (a second `draft` refuses
-while it is there), and start again from `check`. `attach` and `publish` refuse a draft marked a
-pre-release. After `publish` the release is immutable, and a failed check in that step is fixed
-forward.
+A step that refuses names what is missing. Until `publish`, nothing is public. No step deletes
+anything: when a draft, its `.sig` or a hand-off folder `draft` left under `/Users/Shared` must go,
+the step prints the `gh release delete`, `gh release delete-asset` or `rm -r` line for you to type,
+and the step to run after it. The guard on your machines refuses both `gh` deletes to a coding
+agent. A published release is never offered for deletion; `RELEASING.md` lists each case. `attach`
+and `publish` refuse a draft marked a pre-release. After `publish` the release is immutable, and a
+failed check in that step is fixed forward.
 
 Get the full 40-character SHA for the listings, since the forms reject a short SHA:
 

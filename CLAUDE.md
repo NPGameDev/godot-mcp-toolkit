@@ -414,11 +414,14 @@ quick operational facts only.
   runs with `contents: read` only: it creates no GitHub Release and signs
   nothing. The maintainer publishes from their own machine with
   `scripts/publish-release.sh` (`check`, `draft`, the maintainer's
-  `scripts/sign-release.sh <tag> <zip> <private-key.pem>`, `attach`,
-  `publish`; `RELEASING.md`). The sign is typed by the maintainer in a
-  separate admin account that runs no coding agent, from a fresh anonymous
-  clone of `main`. An agent may run `check`, `draft` and `attach`, never the
-  sign or `publish`.
+  `~/sign/release-sign <tag>`, `attach`, `publish`; `RELEASING.md`). The sign
+  is typed by the maintainer in a separate admin account that runs no coding
+  agent; `release-sign` clones `main` afresh and runs the clone's
+  `scripts/sign-release.sh` only while `scripts/` is what the maintainer last
+  reviewed. An agent may run `check`, `draft` and `attach`, never the sign or
+  `publish`. No step deletes a release, an asset or a hand-off folder: a
+  refusal prints the delete for the maintainer to type, and the guard
+  refuses `gh release delete` and `delete-asset` to an agent.
   `workflow_dispatch` takes no input: from a branch it is the **dry run** (the
   tag-only checks skipped, artifact `release-untagged-<sha>`), and on the tag
   ref it is the re-run after a transient failure.

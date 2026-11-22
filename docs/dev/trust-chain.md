@@ -159,12 +159,16 @@ From the merged `main`, tag `vX.Y.Z` so that it embeds `trust-8`, and run the re
 `RELEASING.md` describes, up to and including `attach`: `check`, `draft`, the sign, `attach`. `draft`
 uploads `trust-2.json` through `trust-8.json` from the tag beside the zip and the manifest, and hands
 the zip over for the sign. The sign uses the new key, in the account the maintainer signs releases
-from (see [Custody](#custody)), from a fresh anonymous clone of `main`:
+from (see [Custody](#custody)):
 
 ```sh
-scripts/sign-release.sh vX.Y.Z <the zip draft handed over> <keys>/new-release.pem
+~/sign/release-sign vX.Y.Z
 ```
 
+`release-sign` takes its key from `key_path` in `~/sign/release-sign.conf`: point it at the new key
+first.
+It clones `main` afresh, refuses while `scripts/` differs from the commit the maintainer last
+reviewed, and runs the clone's `scripts/sign-release.sh` on the zip `draft` left.
 `sign-release.sh` reads no manifest it is handed. It verifies the tag's documents from the pinned
 `trust-1` up to `trust-8`, checks the zip against the tag, writes the manifest itself and signs only
 that; `RELEASING.md` lists every check. It keeps the `.sig` only when a release key of the highest
@@ -344,11 +348,14 @@ signed it. Two roots buy availability: losing one costs nothing.
   commands as text, runs the rest (`publish-release.sh check`, `draft` and `attach`,
   `sign-release.sh --verify`, `trust-document.sh build`, `show`, `verify` and `release-keys`), and
   reads only public files. A guard on the maintainer's machines refuses an agent's command that
-  names the keys folder, a private PEM, or a signing or publishing entry point.
+  names the keys folder, a private PEM, or a signing or publishing entry point, and an agent's
+  `gh release delete` or `gh release delete-asset`. Where a release step needs a delete, it prints
+  the command for the maintainer to type (`RELEASING.md` lists them).
 - **Releases are signed in a separate admin account that runs no coding agent.** It holds the
   release key and has git, bash, openssl and node, with no GitHub login and no Godot. The maintainer
   signs there from that account's own login session, never through `su` or `sudo` from a terminal of
-  the account agents work in, and from a fresh anonymous clone of `main`. On the machine releases
+  the account agents work in, with `~/sign/release-sign`, which signs from a fresh anonymous clone of
+  `main`. On the machine releases
   are signed on, the account agents work in holds no key file. Only public bytes cross between the two, through a folder both
   can reach: the draft's zip one way, the manifest and its `.sig` the other. The maintainer types
   `publish` in the account that made the draft.
@@ -415,9 +422,16 @@ rotating past a document with a new field, teach the script that field, or the n
   rights need not use it.
 - **The signing script comes from `main`.** `sign-release.sh` runs from a clone of `main` and reads
   the passphrase, so a malicious change merged there could take the key. Review of what lands on
-  `main`, and the maintainer reading the clone's own `scripts/` changes since the copy last reviewed,
-  before running it, are what stand against it. The sign's display covers the tag, not the clone's
-  tip, and comes from the script itself, so neither it nor the script's checks can.
+  `main` stands against it, and so does `release-sign`, which runs the clone's script only while
+  everything under `scripts/` is what the maintainer last reviewed. It cannot stop a change the
+  maintainer read and approved, code outside `scripts/` that a reviewed script loads, or a sign run
+  without it. The sign's display covers the tag, not the clone's tip, and comes from the script
+  itself, so neither it nor the script's checks can. Three details of the sign are accepted as they
+  are: it never prints the tag's commit, and sends the maintainer to the tag's page on github.com for
+  the 8 hex digits instead; it copies the zip before it checks the environment and the clone, and
+  reads nothing else it is handed but the key; and `SIGN_RELEASE_OUT_ROOT` can move its output
+  folder, but only to a parent where no account other than the signing one and root can rename or
+  replace what it leaves. `release-sign` passes no such variable.
 - **It cannot force an update.** Someone with repo access can keep an old release as latest. A manifest's
   `expires_at` informs and never refuses.
 - **With no absolute data folder there is no store.** With no `APPDATA` or `HOME`, Godot can answer `.`, the
