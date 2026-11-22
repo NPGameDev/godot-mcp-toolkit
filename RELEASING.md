@@ -14,6 +14,10 @@ full picture. If you edit it in one repo, copy the change to the other.
 > traps that have already cost a cycle. This document stays the reference for what
 > each mechanism is and why; the runbook is what you work through on the day.
 
+The toolkit's release signing keys, who holds them, and how they rotate are in
+the toolkit's
+[`docs/dev/trust-chain.md`](https://github.com/NPGameDev/godot-mcp-toolkit/blob/main/docs/dev/trust-chain.md).
+
 ## Release day (TL;DR)
 
 The at-a-glance sequence. Each step links to its detailed section below.
@@ -22,8 +26,9 @@ The at-a-glance sequence. Each step links to its detailed section below.
    cross-version matrix go green — see [Sibling-pin ritual](#sibling-pin-ritual).
 2. **Run the manual validation gate** — see
    [Manual pre-release gate](#manual-pre-release-gate).
-3. **Dry-run the release workflow** (`workflow_dispatch`, `dry-run: true`) and
-   require it green — see [Dry-run rehearsal](#dry-run-rehearsal).
+3. **Dry-run the release workflow** (`workflow_dispatch` from a branch; the
+   server's `dry-run` input left at `true`, the toolkit's workflow takes no
+   input) and require it green — see [Dry-run rehearsal](#dry-run-rehearsal).
 4. **Run `./scripts/release.sh <version>`** (toolkit: `--compatible-server <X.Y.Z>`
    or `--keep-compatible-server`; try `--dry-run` first) — see
    [The release script](#the-release-script).
@@ -31,12 +36,17 @@ The at-a-glance sequence. Each step links to its detailed section below.
    script commit + tag — see [The release script](#the-release-script).
 6. **Push** the released repo: `git push origin main vX.Y.Z` — see
    [The gated release flow](#the-gated-release-flow).
-7. **Watch the gated CI go green** (the behavioral matrix runs before publish) —
-   see [The gated release flow](#the-gated-release-flow).
-8. **Submit the Asset Store / AssetLib update** (toolkit only) — see
+7. **Watch the gated CI go green** (the behavioral matrix runs before the
+   server publishes and before the toolkit uploads its files) — see
+   [The gated release flow](#the-gated-release-flow).
+8. **Publish the toolkit's release from your machine** (toolkit only): check,
+   draft, sign, attach, publish — see
+   [The toolkit's publish ritual](#the-toolkits-publish-ritual).
+9. **Submit the Asset Store / AssetLib update** (toolkit only) — see
    [Asset distribution](#asset-distribution).
-9. **Run the post-publish checks** (`--tools-count`, npm/GH render, the one-time
-   `.mcp.json` flip) — see [Post-publish follow-ups](#post-publish-follow-ups).
+10. **Run the post-publish checks** (`--tools-count`, npm/GH render, the
+    toolkit's ledger line, the one-time `.mcp.json` flip) — see
+    [Post-publish follow-ups](#post-publish-follow-ups).
 
 ## Version scheme
 
@@ -190,37 +200,170 @@ When you push a `v*` tag:
 3. **Toolkit:** the release zip and its update manifest are built, and a **zip
    install-smoke** boots a headless 4.7 editor against the unzipped artifact. The
    booted tree is checked against the zip's release file list and the manifest,
-   and an **update-smoke** installs the zip through the self-update. Then a
-   GitHub Release with the zip and the update manifest attached.
+   an **update-smoke** installs the zip through the self-update, and
+   `scripts/check-release-zip.mjs` checks the zip against the tagged tree. Then
+   the zip and the manifest are uploaded as the workflow artifact
+   `release-<tag>`. The toolkit's workflow runs with `contents: read` only and
+   creates no GitHub Release: you publish it from your machine, as
+   [The toolkit's publish ritual](#the-toolkits-publish-ritual) describes.
 
-The publish / GH-Release / zip steps `needs:` the behavioral job and the `floor`
-job (`ci.yml` with the macOS apply-kill rows), so they run **only** if both are
-green.
+The server's publish job and the toolkit's `build-and-upload` job `needs:` the
+behavioral job, and the toolkit's also the `floor` job (`ci.yml` with the macOS
+apply-kill rows), so they run **only** if those are green.
 
 **Push with an explicit refspec** — `git push origin main vX.Y.Z`. Do not use
 `git push --follow-tags`: that flag pushes *every* reachable unpushed annotated
 tag, so a stray experimental `v*` tag would ride along and fire the release gate.
 
+## The toolkit's publish ritual
+
+The toolkit's release is published from the maintainer's machine by
+`scripts/publish-release.sh`, one step per call, with the maintainer's
+`scripts/sign-release.sh` between two of them. Each `publish-release.sh` step
+refuses unless the one before it is done. `check` and `attach` each leave a
+record in `dist-plugin/release-<tag>/`, beside the files `check` passed. The
+records only keep the steps in order: `publish` checks again what it reads
+itself from the tag, from `origin` and from the draft's bytes. The sign reads no
+record: it checks the clone, the tag and the zip itself. The steps marked *agent* may be run by a coding
+agent helping with the release; the other two are typed by the maintainer.
+Every step first refuses when a variable that would aim `git`, `gh`, `node` or
+`openssl` somewhere else is set, or when `origin` is not the URL pinned in
+`scripts/lib/release_identity.sh`.
+
+1. `scripts/publish-release.sh check vX.Y.Z` (*agent*) refuses unless a
+   `release.yml` run on the tag ref succeeded: the tag push, or a dispatch on
+   the tag ref, never a run on a branch, which skips the tag-only checks. It
+   does not wait, so watch the run first (`gh run watch`). It downloads the
+   run's artifact `release-vX.Y.Z`, checks the zip against the tag
+   (`scripts/check-release-zip.mjs`, the run that decides), and compares the
+   manifest with the one this machine writes for that zip. It also refuses
+   when the repository has a branch named like the tag, when a release for the
+   tag is already on GitHub, and when the artifact holds anything but the zip
+   and the manifest.
+2. `scripts/publish-release.sh draft vX.Y.Z` (*agent*) creates the draft
+   release with the checked zip and manifest, `--verify-tag`, and an empty body.
+   When the tag holds trust documents after the first, it uploads those too,
+   `trust-2.json` through `trust-N.json`, read from the tag. It copies the zip
+   into a new folder, `publish-release-vX.Y.Z.<random>` under `/Users/Shared`
+   (`PUBLISH_RELEASE_HANDOFF_ROOT` names another parent), and prints the sign
+   command. It refuses when a release for the tag is already on GitHub, and
+   while a folder that an earlier draft of the tag left there, owned by the
+   same account, remains: remove it first, so the signing account finds one zip
+   for the tag. A draft is invisible to the public.
+3. The sign (*maintainer*), typed in a separate admin account that holds the
+   release key and runs no coding agent, from a fresh anonymous clone of
+   `main`:
+   `scripts/sign-release.sh vX.Y.Z <zip> <private-key.pem>`.
+   It first refuses a tag that is not `vX.Y.Z`, a missing zip or key, and a
+   folder for the signature that fails the rule below. It then copies the zip,
+   and reads nothing else it is handed but the key. After that it refuses, in
+   this order, when:
+   - a variable that aims `git`, `gh`, `node` or `openssl` elsewhere is set
+     (`scripts/lib/release_checks.sh` lists them);
+   - `origin` is not the pinned URL;
+   - the clone has changed or untracked files, or is not at the tip of
+     `origin`'s `main`;
+   - `origin`'s tag is not the clone's;
+   - the tag's commit is not on `origin`'s `main`;
+   - the tag's trust documents do not run from `trust-1.json` with no gap,
+     `trust-1.json` does not hash to the pinned value, a document does not
+     verify against the one before it, or the toolkit at the tag does not
+     embed the last one;
+   - `scripts/check-release-zip.mjs` does not accept the copy for the tag.
+
+   It writes the manifest itself, from the copy and the tag, and signs only
+   that: no manifest is handed to it, and it never calls `gh`. Before it asks
+   for the passphrase it shows the tag, its commit's subject, the release
+   before with its commit and date, the commits since and what changed under
+   `scripts/` and `trust/`, but not the tag's own commit. Open the tag's page on github.com,
+   `https://github.com/NPGameDev/godot-mcp-toolkit/releases/tag/vX.Y.Z`, follow
+   its commit link, and type the first 8 hex digits of the commit shown there;
+   anything else is refused, and so is a tag whose own commit carries the
+   release tag before it. It keeps the `.sig` only when a release key of the
+   tag's highest trust document verifies it, and refuses a key that is not
+   RSA. The manifest and its `.sig` land
+   in a new folder, `sign-release-vX.Y.Z.<random>` under `/Users/Shared`
+   (`SIGN_RELEASE_OUT_ROOT` names another parent, which must be that account's
+   own with no write for group or others, or root's or that account's with
+   the sticky bit set). The last line printed is `OUT <folder>`.
+4. `scripts/publish-release.sh attach vX.Y.Z [<folder>]` (*agent*) takes the
+   manifest and the `.sig` from the sign's folder, and neither file may be a
+   symlink. With no folder named it looks under `/Users/Shared`, or under
+   `SIGN_RELEASE_OUT_ROOT` when that is set, for the one folder named
+   `sign-release-vX.Y.Z.<letters and digits>` that is not a symlink, and
+   refuses on none or several. The manifest must be byte-equal to the one
+   `check` passed, and `scripts/sign-release.sh --verify` must accept the
+   `.sig`. It refuses a draft marked a pre-release, a draft whose assets are
+   not the checked zip and manifest and the tag's trust documents, byte for
+   byte, with at most the `.sig` beside them, and a draft that drops or changes
+   a trust document the current latest release carries. Only then does it
+   upload the `.sig`. It downloads the assets back and runs the reader check
+   with the toolkit inside the draft's zip, headless on Godot 4.2 and 4.7. As a
+   fresh install, that toolkit must trust the draft's manifest and signature
+   and refuse the same signature over a changed manifest. Starting from the
+   tag's `trust-1.json` and an empty store, it must then accept each of the
+   draft's documents in order and trust the manifest and signature again
+   (`GODOT_BIN_4_2` and `GODOT_BIN_4_7` name the binaries). Put the release
+   body on the draft before the next step.
+5. `scripts/publish-release.sh publish vX.Y.Z` (*maintainer*), typed in the
+   account that made the draft, runs the sign's first six checks again and
+   refuses unless `attach` passed for this draft. Then, before anything is
+   public, it requires that one release carries the tag, a draft not marked a
+   pre-release, with exactly the expected assets. It downloads every asset
+   back and checks the zip against the tag, the manifest against the one it
+   writes itself, the `.sig` with `--verify`, each trust document against the
+   tag's, that the draft drops or changes no trust document the current latest
+   release carries, that the repository has immutable releases on, and that
+   the current latest release is a lower version; a repository with no
+   published release is refused. It then reads the draft and its asset names
+   once more, and refuses when either changed while it was checking. Only then
+   does it publish the draft as the latest release and check it:
+   `gh release verify` and `gh release verify-asset` on each asset, the asset
+   names again, `immutable: true` on the release, and an anonymous
+   `releases/latest` that returns `vX.Y.Z`. GitHub has no call that checks a
+   draft and publishes it as one step, so an asset added after that last read
+   is found only by the checks after the publish, on a release that can no
+   longer change. Run again on a release it has already published, `publish`
+   publishes nothing and repeats the checks.
+
+A release whose tag holds a new trust document takes the same five steps: the
+document is one of the release's assets, so it goes public with the release.
+No `trust-N` tag or release exists.
+
+The `.sig` goes up after the draft exists: a draft is invisible, and an
+immutable release locks its assets and tag only when it is published. The dry
+run before the tag and the tag run before `check` each take about an hour, most
+of it the floor's macOS apply-kill rows.
+
 ## Dry-run rehearsal
 
 **Before creating a tag, rehearse the release workflow.** Trigger `release.yml`
-via `workflow_dispatch` with its `dry-run` input left at its default (`true`).
-This runs everything — the called behavioral matrix and the whole floor, and the
-package-shape / zip-build gates — but skips `npm publish` and GH-Release
-creation. Require it green before you cut the tag.
+via `workflow_dispatch` from a branch. This runs everything — the called
+behavioral matrix (and in the toolkit the whole floor) and the package-shape /
+zip-build gates — and publishes nothing:
+
+- **Server:** leave the `dry-run` input at its default (`true`); the run skips
+  `npm publish` and GH-Release creation.
+- **Toolkit:** the workflow takes no input. A dispatch from a branch skips only
+  the checks that need a tag (the tag against `plugin.cfg`, the CHANGELOG
+  section and the server pin), checks the zip against the commit, and uploads
+  the artifact `release-untagged-<sha>`. The workflow cannot create a release.
+
+Require it green before you cut the tag.
 
 **Re-run escape hatch.** If a tag push fails transiently *after* the tag is
-created, the deliberate recovery is to **dispatch `release.yml` on the tag ref
-with `dry-run: false`**. Never delete and re-push a tag — a published tag that
-moves is a trust and security problem, and the release gate will refuse to
-re-cover it cleanly.
+created, the deliberate recovery is to **dispatch `release.yml` on the tag
+ref**: in the server with `dry-run: false`; in the toolkit with no input, which
+runs everything the tag push runs and uploads `release-<tag>`, the run `check`
+accepts. Never delete and re-push a tag — a published tag that moves is a trust
+and security problem, and the release gate will refuse to re-cover it cleanly.
 
 ## Vacuous-gate caveat (maintainer warning)
 
 The behavioral gate is only as strong as its opt-in job conditions. If
 `release.yml` ever gains a **new trigger type** (for example a `schedule:`
 trigger), the behavioral callee's opt-in jobs would **all-skip**, and the
-`behavioral:` call would then succeed **vacuously** — un-gating publish while
+`behavioral:` call would then succeed **vacuously** — un-gating the release while
 appearing green. **Whenever you change what triggers `release.yml`, re-verify the
 callee's job gates.** (An anti-vacuous assert job in `cross-version.yml` guards
 this in CI, but the human check is the backstop when triggers change.)
@@ -362,10 +505,10 @@ Post-December-2025, npm auth has **no long-lived tokens** — `npm deprecate` an
 `npm login`, ~2-hour session; OIDC mints publish credentials only and cannot run
 these). Run them **from a maintainer machine**, never scripted in CI.
 
-**GitHub.** Edit or delete the bad Release, keeping the tag. (If GitHub
-**immutable releases** are ever enabled, this path disappears — assets freeze and
-deleting a release burns its tag name forever — and rollback becomes
-patch-forward only.)
+**GitHub.** With **immutable releases** on (the toolkit's `publish` refuses
+without them), a published release is fixed forward only: its assets and tag
+cannot change, and deleting it burns its tag name for good. Ship a fixed patch release. Before `publish`, the
+toolkit's draft can still be deleted and drafted again.
 
 **AssetLib / Asset Store.** On the legacy AssetLib, submit an **edit**
 repointing the Download Commit at the previous or fixed SHA. The Asset Store
@@ -391,9 +534,10 @@ transition:
   listing current while it accepts submissions.
 
 For a release **update**, the Asset Store takes a new **Version** with the
-CI-built zip uploaded (the one attached to the GitHub Release, never a local
-build), and the legacy AssetLib takes an edit with the new full **Download
-Commit SHA** (the toolkit's tagged commit — `git rev-parse vX.Y.Z`). A legacy
+CI-built zip uploaded (the one on the GitHub Release, which `check` took from
+the tag's run, never a local build), and the legacy AssetLib takes an edit with
+the new full **Download Commit SHA** (the toolkit's tagged commit —
+`git rev-parse vX.Y.Z`). A legacy
 AssetLib edit re-enters moderation and can take days; plan for that latency.
 The `release.sh` script prints the three form values (version, Download Commit
 SHA, zip name `godot-mcp-toolkit-<ver>.zip`) at tag time so the submission is
@@ -407,8 +551,11 @@ The server has no equivalent manual step — its release publishes to npm from C
 
 ## Post-publish follow-ups
 
-After the gated CI publishes:
+After the server's CI publishes and the toolkit's `publish` step passes:
 
+- **Record the toolkit's manifest:** `publish` prints a line for
+  `trust/released-manifests.txt` (the version and the manifest's SHA-256). Add
+  it to the toolkit through a pull request from `chore/ledger-X.Y.Z`.
 - **Verify the live package:**
   `npx --yes @npgamedev/godot-mcp-server@<version> --tools-count`. The registry
   can lag a publish by seconds to minutes — poll before concluding failure.

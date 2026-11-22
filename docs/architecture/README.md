@@ -876,19 +876,27 @@ The two repos ship through **different channels** so users never fetch what they
 (Pattern B):
 
 - **Toolkit** → the **Godot Asset Library** (the GitHub archive) plus a GitHub-Releases zip
-  built by `scripts/build-plugin-release.{ps1,sh}`. The package contains **only** the
+  that `.github/workflows/release.yml` builds with `scripts/build-plugin-release.sh` (the `.ps1`
+  twin builds the same layout locally). The package contains **only** the
   `addons/godot_mcp_toolkit/` subtree — which is why this `docs/` folder, the ADRs, and the dev
   docs never reach end users. The Releases zip also holds the release file list,
   `addons/godot_mcp_toolkit/release_files.sha256` (one SHA-256 and path per file, sorted, in the
   format `sha256sum -c` checks), and the release publishes the **update manifest**,
   `godot-mcp-toolkit-<version>.update.json`, beside it: the manifest pins the zip by size and
   SHA-256 and names the oldest Godot it runs on. Both build scripts write the two
-  (`scripts/lib/release_files.sh` for the bash one), but only the bash build's manifest, the one
-  `.github/workflows/release.yml` builds, is ever signed. The workflow checks the booted tree
-  against the list and the manifest against the zip (`scripts/check_release_files.sh`), then
-  attaches the zip and the manifest to the GitHub Release; the maintainer adds the signature,
-  `godot-mcp-toolkit-<version>.update.json.sig`, with `scripts/sign-release.sh`, outside the
-  workflow. The self-update reads all three ([§10](#10-security--trust-boundaries)).
+  (`scripts/lib/release_files.sh` for the bash one), but neither build's manifest is ever
+  signed: `scripts/sign-release.sh` writes the release's manifest itself, from the zip and the
+  tag. The workflow checks the booted tree
+  against the list and the manifest against the zip (`scripts/check_release_files.sh`) and the zip
+  against the tagged tree (`scripts/check-release-zip.mjs`), then uploads the zip and the manifest
+  as a workflow artifact; it runs read-only and creates no release. On the maintainer's machine,
+  `scripts/publish-release.sh` checks the artifact again and drafts the GitHub Release with both
+  and with the tag's trust documents after the first. The maintainer signs in a separate admin
+  account that runs no coding agent, from a fresh clone of `main`: `scripts/sign-release.sh`
+  checks the clone, the tag and the zip, writes the manifest again itself and signs only that.
+  `publish-release.sh` then attaches the signature `godot-mcp-toolkit-<version>.update.json.sig`
+  and, after checking every asset again, publishes. The self-update reads the zip, the manifest, the
+  signature and the trust documents ([§10](#10-security--trust-boundaries)).
   `plugin.cfg` declares the version and the `plugin.gd` entry point;
   `icon.png` at the repo root is the Asset Library listing icon, and the repo-root `icon.svg` is the
   dogfood project's own icon (`project.godot` `config/icon`). The addon carries a separate

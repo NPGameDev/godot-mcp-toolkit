@@ -4,8 +4,9 @@
 # `addons/godot_mcp_toolkit/`, matching what both AssetLib and a manual
 # extract-into-addons install expect), holding the release file list
 # (release_files.sha256), and dist-plugin/godot-mcp-toolkit-<version>.update.json,
-# the update manifest that pins the zip by size and hash. The manifest is unsigned:
-# the maintainer signs it with scripts/sign-release.sh.
+# the update manifest that pins the zip by size and hash. The manifest is unsigned.
+# For a release, scripts/sign-release.sh writes the manifest again itself, from the zip
+# and the tag, and signs that one; it reads no manifest it is handed.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -75,4 +76,4 @@ MANIFEST_NAME="godot-mcp-toolkit-${VERSION}.update.json"
 rf_write_manifest "${OUT_DIR}/${ZIP_NAME}" "${VERSION}" "${MIN_GODOT}" "${COMPATIBLE_SERVER}" "${EXPIRES_AT}" "${OUT_DIR}/${MANIFEST_NAME}"
 
 echo "Built ${OUT_DIR}/${ZIP_NAME}"
-echo "Built ${OUT_DIR}/${MANIFEST_NAME} (unsigned; sign it with scripts/sign-release.sh)"
+echo "Built ${OUT_DIR}/${MANIFEST_NAME} (unsigned; scripts/sign-release.sh writes and signs a release's own)"
