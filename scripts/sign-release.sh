@@ -162,7 +162,9 @@ confirm_commit() {
     # whoever can push a tag can put one there.
     [[ "${previous_commit}" != "${RC_COMMIT}" ]] \
       || refuse "${previous}, the release tag before ${tag}, is on the commit of ${tag} itself, so nothing would show what ${tag} changes."
-    previous_date="$(git --no-pager -C "${REPO_ROOT}" log -1 --no-color --format=%cI "${previous_commit}" | tr -d '\r')" \
+    # By version, git ends a UTC commit date in Z or in +00:00; it is shown as +00:00 on
+    # every one.
+    previous_date="$(git --no-pager -C "${REPO_ROOT}" log -1 --no-color --format=%cI "${previous_commit}" | tr -d '\r' | sed 's/Z$/+00:00/')" \
       || refuse "could not read the commit of ${previous}."
     before="${previous} ${previous_commit} ${previous_date}"
   else
