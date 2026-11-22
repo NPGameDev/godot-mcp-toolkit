@@ -29,6 +29,8 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=lib/release_files.sh
 source "${REPO_ROOT}/scripts/lib/release_files.sh"
+# The scripts under test refuse these, and some CI runners and editor terminals set them.
+unset XDG_CONFIG_HOME GH_CONFIG_DIR GIT_ASKPASS
 
 for tool in git openssl zip unzip; do
   command -v "${tool}" >/dev/null 2>&1 || { echo "error: ${tool} is required." >&2; exit 2; }
@@ -161,6 +163,19 @@ tag_state() {
 commit_of() {
   git -C "${REPO}" rev-parse "refs/tags/$1^{commit}"
 }
+# The first 8 hex digits of the commit of the tag $1: what the sign asks the maintainer for,
+# so no refusal may print them.
+typed_for() {
+  local commit
+  commit="$(commit_of "$1")"
+  printf '%s\n' "${commit:0:8}"
+}
+# The commit of the tag $1 as a refusal prints it: its first 8 hex digits masked.
+masked_commit_of() {
+  local commit
+  commit="$(commit_of "$1")"
+  printf '********%s\n' "${commit:8}"
+}
 
 # The repository the scripts under test sit in: a bare repository as origin, and a release
 # identity naming that origin and the first document above. No variable overrides the
@@ -217,7 +232,11 @@ cat > "${STUB}/gh" <<'STUB'
 #   assets-unread                  the request for a release's asset names fails;
 #   asset-added-at-setting-read    holds a release's id, and that release gets one more
 #                                  asset when the immutable-releases setting is read;
-#   asset-added-at-publish         the release gets one more asset as it is published.
+#   asset-added-at-publish         the release gets one more asset as it is published;
+#   upload-dies                    an upload leaves the first byte of its file on the
+#                                  release, then fails;
+#   download-fails                 holds an asset's name, and a download of that asset
+#                                  fails.
 # gh api only ever reads here: a flag that would make it write exits 98.
 set -euo pipefail
 printf '%s\n' "$*" >> "${FAKE_GITHUB}/gh.log"
@@ -351,12 +370,19 @@ case "${verb}" in
   "release upload")
     id="$(release_of "${positional[2]}")"
     [[ ! -e "${releases}/${id}/assets/$(basename "${positional[3]}")" ]] || exit 1
+    if [[ -e "${FAKE_GITHUB}/upload-dies" ]]; then
+      head -c 1 "${positional[3]}" > "${releases}/${id}/assets/$(basename "${positional[3]}")"
+      exit 1
+    fi
     cp "${positional[3]}" "${releases}/${id}/assets/"
     ;;
   "release download")
     id="$(release_of "${positional[2]}")"
     matched=0
     for pattern in ${patterns[@]+"${patterns[@]}"}; do
+      if [[ -f "${FAKE_GITHUB}/download-fails" && "${pattern}" == "$(cat "${FAKE_GITHUB}/download-fails")" ]]; then
+        exit 1
+      fi
       if [[ -f "${releases}/${id}/assets/${pattern}" ]]; then
         # Like gh, never over a file that is already there.
         [[ ! -e "${dir}/${pattern}" ]] || exit 1
@@ -403,16 +429,17 @@ STUB
 
 cat > "${STUB}/node" <<'STUB'
 #!/usr/bin/env bash
-# Stands in for check-release-zip.mjs <zip> <tag>: a zip is the tag's when the file
-# good-zips lists "<tag> <its SHA-256>".
+# Stands in for check-release-zip.mjs <zip> refs/tags/<tag>: a zip is the tag's when the
+# file good-zips lists "<tag> <its SHA-256>".
 set -euo pipefail
+tag="${3#refs/tags/}"
 if command -v sha256sum >/dev/null 2>&1; then
   hash="$(sha256sum < "$2" | cut -d' ' -f1)"
 else
   hash="$(shasum -a 256 < "$2" | cut -d' ' -f1)"
 fi
-if ! grep -qxF "$3 ${hash}" "${FAKE_GITHUB}/good-zips"; then
-  echo "the zip is not the one built from $3"
+if ! grep -qxF "${tag} ${hash}" "${FAKE_GITHUB}/good-zips"; then
+  echo "the zip is not the one built from ${tag}"
   exit 1
 fi
 STUB
@@ -638,6 +665,8 @@ RECORDS="$(record_folder v1.2.0)"
 ARTIFACT="${FAKE_GITHUB}/runs/7/artifacts/release-v1.2.0"
 publish_release check v1.2.0
 refused "no run on the tag has succeeded" "no release.yml run on the tag ref v1.2.0"
+check "no run on the tag has succeeded: the first 8 hex digits of its commit are not shown" \
+  lacks "${OUT}" "$(typed_for v1.2.0)"
 seed_run 7 v1.2.0
 : > "${FAKE_GITHUB}/branches/v1.2.0"
 publish_release check v1.2.0
@@ -666,6 +695,15 @@ check "the built zip and manifest are checked" equals "${STATUS}" "0"
 check "the record names the zip's SHA-256" contains "$(cat "${RECORDS}/checked" 2>/dev/null)" "zip $(rf_sha256 "${BUILT}/v1.2.0/$(zip_name v1.2.0)")"
 check "the checked zip is kept" same_bytes "${RECORDS}/$(zip_name v1.2.0)" "${BUILT}/v1.2.0/$(zip_name v1.2.0)"
 check "check writes nothing to GitHub" equals "$(gh_writes)" "0"
+# A record of another commit than the tag's, as a tag moved since check would leave.
+cp "${RECORDS}/checked" "${WORK}/checked-v1.2.0"
+sed "s/^commit .*/commit $(commit_of v1.1.2)/" "${WORK}/checked-v1.2.0" > "${RECORDS}/checked"
+publish_release draft v1.2.0
+cp "${WORK}/checked-v1.2.0" "${RECORDS}/checked"
+refused "a tag at another commit than the one checked" \
+  "the tag v1.2.0 is at $(masked_commit_of v1.2.0), not the commit that was checked"
+check "a tag at another commit than the one checked: the first 8 hex digits of its commit are not shown" \
+  lacks "${OUT}" "$(typed_for v1.2.0)"
 
 echo "── draft ──"
 publish_release draft v1.2.1
@@ -824,10 +862,12 @@ restore_state v1.2.1 101
 rm "$(assets_of 101)/trust-2.json"
 publish_release attach v1.2.1 "${SIGNED_1_2_1}"
 refused "attach: a draft with a trust document missing" "must hold the zip, the manifest, trust-2.json and at most the signature"
+leaves_delete "attach: a draft with a trust document missing" "gh release delete v1.2.1 --repo ${FAKE_SLUG} --yes"
 restore_state v1.2.1 101
 cp "${NOT_A_TAGS_DOCUMENT}" "$(assets_of 101)/trust-3.json"
 publish_release attach v1.2.1 "${SIGNED_1_2_1}"
 refused "attach: a draft with a trust document the tag does not hold" "must hold the zip, the manifest, trust-2.json and at most the signature"
+leaves_delete "attach: a draft with a trust document the tag does not hold" "gh release delete v1.2.1 --repo ${FAKE_SLUG} --yes"
 restore_state v1.2.1 101
 cp "${NOT_A_TAGS_DOCUMENT}" "$(assets_of 101)/trust-2.json"
 publish_release attach v1.2.1 "${SIGNED_1_2_1}"
@@ -839,6 +879,9 @@ restore_state v1.2.1 101
 cp "${NOT_A_TAGS_DOCUMENT}" "$(assets_of 100)/trust-2.json"
 publish_release attach v1.2.1 "${SIGNED_1_2_1}"
 refused "attach: a trust document of the latest release changed" "the latest release v1.2.0 carries trust-2.json"
+leaves_delete "attach: a trust document of the latest release changed" "gh release delete v1.2.1 --repo ${FAKE_SLUG} --yes"
+check "attach: a trust document of the latest release changed: says a new draft of the tag would be refused too" \
+  contains "${OUT}" "v1.2.1 itself does not carry trust-2.json as v1.2.0 does, so a new draft of it would be refused too"
 rm "$(assets_of 100)/trust-2.json"
 mv "${FAKE_GITHUB}/releases/101" "${HELD}/away"
 publish_release attach v1.2.1 "${SIGNED_1_2_1}"
@@ -864,6 +907,28 @@ publish_release attach v1.2.1 "${SIGNED_1_2_1}"
 refused "attach: a signature already on the draft that is not the folder's" "the draft's $(signature_name v1.2.1) is not the one in ${SIGNED_1_2_1}"
 leaves_delete "attach: a signature already on the draft that is not the folder's" \
   "gh release delete-asset v1.2.1 $(signature_name v1.2.1) --repo ${FAKE_SLUG} --yes"
+restore_state v1.2.1 101
+# An upload that dies part way leaves its first byte on the draft.
+SIGNATURE_DELETE="gh release delete-asset v1.2.1 $(signature_name v1.2.1) --repo ${FAKE_SLUG} --yes"
+: > "${FAKE_GITHUB}/upload-dies"
+publish_release attach v1.2.1 "${SIGNED_1_2_1}"
+rm "${FAKE_GITHUB}/upload-dies"
+check "attach: an upload that dies part way: exit 2" equals "${STATUS}" "2"
+check "attach: an upload that dies part way: says so" contains "${OUT}" "error: could not upload $(signature_name v1.2.1) to the draft for v1.2.1."
+check "attach: an upload that dies part way: prints the delete of the asset on a line of its own" \
+  equals "$(printf '%s\n' "${OUT}" | grep -c -x -F "    ${SIGNATURE_DELETE}" || true)" "1"
+check "attach: an upload that dies part way: says the maintainer types it" \
+  contains "${OUT}" "The maintainer types this; no step here runs it:"$'\n'"    ${SIGNATURE_DELETE}"
+check "attach: an upload that dies part way: runs no delete itself" equals "$(gh_calls "release (delete|delete-asset)")" "0"
+restore_state v1.2.1 101
+cp "${SIGNED_1_2_1}/$(signature_name v1.2.1)" "$(assets_of 101)/"
+signature_name v1.2.1 > "${FAKE_GITHUB}/download-fails"
+publish_release attach v1.2.1 "${SIGNED_1_2_1}"
+rm "${FAKE_GITHUB}/download-fails"
+check "attach: the signature not downloaded back: exit 2" equals "${STATUS}" "2"
+check "attach: the signature not downloaded back: says so" \
+  contains "${OUT}" "error: could not download $(signature_name v1.2.1) back from the draft for v1.2.1."
+leaves_delete "attach: the signature not downloaded back" "${SIGNATURE_DELETE}"
 restore_state v1.2.1 101
 
 RUN_ENV=("GODOT_BIN_4_7=${STUB}/godot-4.2")
@@ -965,16 +1030,23 @@ rm "$(assets_of 101)/trust-2.json"
 vouch_for v1.2.1 101
 publish_release publish v1.2.1
 refused "a trust document missing" "${EXPECTED_SET}"
+leaves_delete "a trust document missing" "gh release delete v1.2.1 --repo ${FAKE_SLUG} --yes"
 restore_state v1.2.1 101
 cp "${NOT_A_TAGS_DOCUMENT}" "$(assets_of 101)/trust-3.json"
 vouch_for v1.2.1 101
 publish_release publish v1.2.1
 refused "a trust document the tag does not hold" "${EXPECTED_SET}"
+leaves_delete "a trust document the tag does not hold" "gh release delete v1.2.1 --repo ${FAKE_SLUG} --yes"
 restore_state v1.2.1 101
 echo notes > "$(assets_of 101)/notes.txt"
 vouch_for v1.2.1 101
 publish_release publish v1.2.1
 refused "an asset that is none of the release's" "${EXPECTED_SET}"
+leaves_delete "an asset that is none of the release's" "gh release delete v1.2.1 --repo ${FAKE_SLUG} --yes"
+echo false > "${FAKE_GITHUB}/releases/101/draft"
+publish_release publish v1.2.1
+refused "a published release with an asset that is none of the release's" "${EXPECTED_SET}"
+check "a published release with an asset that is none of the release's: no delete is printed" lacks "${OUT}" "gh release delete"
 restore_state v1.2.1 101
 cp "${BUILT}/other.zip" "$(assets_of 101)/$(zip_name v1.2.1)"
 vouch_for v1.2.1 101
@@ -1015,11 +1087,13 @@ echo "── publish refuses: the repository ──"
 cp "${NOT_A_TAGS_DOCUMENT}" "$(assets_of 100)/trust-3.json"
 publish_release publish v1.2.1
 refused "a trust document of the latest release dropped" "the latest release v1.2.0 carries trust-3.json"
+leaves_delete "a trust document of the latest release dropped" "gh release delete v1.2.1 --repo ${FAKE_SLUG} --yes"
 rm "$(assets_of 100)/trust-3.json"
 # And a trust-2.json with other bytes, which the draft would change.
 cp "${NOT_A_TAGS_DOCUMENT}" "$(assets_of 100)/trust-2.json"
 publish_release publish v1.2.1
 refused "a trust document of the latest release changed" "the latest release v1.2.0 carries trust-2.json"
+leaves_delete "a trust document of the latest release changed" "gh release delete v1.2.1 --repo ${FAKE_SLUG} --yes"
 rm "$(assets_of 100)/trust-2.json"
 echo false > "${FAKE_GITHUB}/immutable-releases"
 publish_release publish v1.2.1
@@ -1044,6 +1118,8 @@ echo 5 > "${FAKE_GITHUB}/latest"
 echo nightly > "${FAKE_GITHUB}/releases/5/tag"
 publish_release publish v1.2.1
 refused "a latest release that is no version" "the latest release is nightly, which is not a version"
+check "a latest release that is no version: says the maintainer types the repair" contains "${OUT}" \
+  "The maintainer types this; no step here runs it:"$'\n'"    gh release edit v<the last version> --repo ${FAKE_SLUG} --latest"
 rm -rf "${FAKE_GITHUB}/releases/5"
 # No published release at all: the two the fixture has are taken away.
 mv "${FAKE_GITHUB}/releases/1" "${HELD}/release-1"

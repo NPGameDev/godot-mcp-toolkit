@@ -27,6 +27,8 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=lib/release_files.sh
 source "${REPO_ROOT}/scripts/lib/release_files.sh"
+# The scripts under test refuse these, and some CI runners and editor terminals set them.
+unset XDG_CONFIG_HOME GH_CONFIG_DIR GIT_ASKPASS
 
 # Through cd and pwd for a path with no drive colon: it goes on the PATH below.
 WORK="$(cd "$(mktemp -d "${TMPDIR:-/tmp}/test-release-files.XXXXXX")" && pwd)"
@@ -61,6 +63,7 @@ skip() {
 equals() { [[ "$1" == "$2" ]]; }
 contains() { [[ "$1" == *"$2"* ]]; }
 lacks() { [[ "$1" != *"$2"* ]]; }
+lacks_both() { lacks "$1" "$2" && lacks "$1" "$3"; }
 is_file() { [[ -f "$1" ]]; }
 no_file() { [[ ! -e "$1" ]]; }
 same_bytes() { cmp -s "$1" "$2"; }
@@ -458,12 +461,21 @@ sign_git tag -d v1.7.0 >/dev/null
 sign_git tag -a -m v1.5.0 v1.5.0 "$(commit_of v1.3.5)"
 
 # Stand-ins on the PATH for the tools signing could reach: a node that logs where and how
-# it was run, prints what the file ${NODE_SAYS} holds when there is one, on stdout and
-# again on stderr behind "on stderr: ", and accepts the zip unless the file
-# ${NODE_REFUSES} exists; a gh that only logs, because signing must never run it; and an
-# ls that answers for a folder's owner and mode with what the file ${LS_SAYS} holds when
-# there is one, since no test can make a folder another account owns.
+# it was run and the commit its tag argument names, prints what the file ${NODE_SAYS}
+# holds when there is one, on stdout and again on stderr behind "on stderr: ", and
+# accepts the zip unless the file
+# ${NODE_REFUSES} exists; a gh that only logs, because signing must never run it; an ls
+# that answers for a folder's owner and mode with what the file ${LS_SAYS} holds when there
+# is one, since no test can make a folder another account owns; and a git that answers as
+# the real one, except that a commit's subject asked for alone is what the file
+# ${GIT_SUBJECT_SAYS} holds, and a --stat comparison names one more file, the one the file
+# ${GIT_STAT_SAYS} holds, when those files exist: a commit that carries its own first 8 hex
+# digits takes about 2^32 tries to make.
 export NODE_LOG="${WORK}/node.log"
+export GIT_SUBJECT_SAYS="${WORK}/git-subject-says"
+export GIT_STAT_SAYS="${WORK}/git-stat-says"
+REAL_GIT="$(command -v git)"
+export REAL_GIT
 export NODE_SAYS="${WORK}/node-says"
 export NODE_REFUSES="${WORK}/node-refuses"
 export GH_LOG="${WORK}/gh.log"
@@ -474,6 +486,7 @@ mkdir -p "${WORK}/stub"
 cat > "${WORK}/stub/node" <<'STUB'
 #!/usr/bin/env bash
 printf '%s|%s\n' "$(pwd)" "$*" >> "${NODE_LOG}"
+printf 'reads %s\n' "$(git rev-parse -q --verify "${3-}^{commit}" 2>/dev/null)" >> "${NODE_LOG}"
 if [[ -f "${NODE_SAYS}" ]]; then
   cat "${NODE_SAYS}"
   sed 's/^/on stderr: /' "${NODE_SAYS}" >&2
@@ -492,7 +505,22 @@ else
   exec "${REAL_LS}" "$@"
 fi
 STUB
-chmod +x "${WORK}/stub/node" "${WORK}/stub/gh" "${WORK}/stub/ls"
+cat > "${WORK}/stub/git" <<'STUB'
+#!/usr/bin/env bash
+for arg in "$@"; do
+  if [[ "${arg}" == "--format=%s" && -f "${GIT_SUBJECT_SAYS}" ]]; then
+    cat "${GIT_SUBJECT_SAYS}"
+    exit 0
+  fi
+  if [[ "${arg}" == "--stat" && -f "${GIT_STAT_SAYS}" ]]; then
+    "${REAL_GIT}" "$@" || exit
+    printf ' %s | 1 +\n' "$(cat "${GIT_STAT_SAYS}")"
+    exit 0
+  fi
+done
+exec "${REAL_GIT}" "$@"
+STUB
+chmod +x "${WORK}/stub/node" "${WORK}/stub/gh" "${WORK}/stub/ls" "${WORK}/stub/git"
 
 # An openssl on the PATH that logs each call before running the real one.
 REAL_OPENSSL="$(command -v openssl)"
@@ -528,6 +556,12 @@ typed_for() {
   local commit
   commit="$(commit_of "$1")"
   printf '%s\n' "${commit:0:8}"
+}
+# The commit of the tag $1 as a refusal prints it: its first 8 hex digits masked.
+masked_commit_of() {
+  local commit
+  commit="$(commit_of "$1")"
+  printf '********%s\n' "${commit:8}"
 }
 
 # Runs the fixture's sign-release.sh as from a pipe. The line $1 goes to its stdin, where
@@ -591,7 +625,7 @@ check "plain key: the folder is open to another account" equals "$(mode_of "${PL
 check "plain key: the manifest is readable from another account" equals "$(mode_of "${PLAIN_OUT}/${MANIFEST_NAME}")" "644"
 check "plain key: the .sig is readable from another account" equals "$(mode_of "${PLAIN_OUT}/${SIG_NAME}")" "644"
 check "plain key: the zip check runs in the repository, on the script's own copy of the zip and the tag" contains "$(cat "${NODE_LOG}")" "${SIGN_REPO}|${SIGN_REPO}/scripts/check-release-zip.mjs ${SIGN_TMP}/sign-release."
-check "plain key: that copy carries the release's name" contains "$(cat "${NODE_LOG}")" "/godot-mcp-toolkit-1.2.0.zip v1.2.0"
+check "plain key: that copy carries the release's name" contains "$(cat "${NODE_LOG}")" "/godot-mcp-toolkit-1.2.0.zip refs/tags/v1.2.0"
 check "plain key: the zip check is not handed the zip's own path" lacks "$(cat "${NODE_LOG}")" "handed-over.zip"
 check "plain key: the tag is shown" contains "${OUT}" "Tag      v1.2.0"
 check "plain key: its commit is shown in full" contains "${OUT}" "Commit   $(commit_of v1.2.0)"
@@ -650,16 +684,27 @@ for name in GIT_CONFIG_GLOBAL OPENSSL_CONF; do
   sign_refused "check 1, ${name} is set" "${name} is set"
 done
 NOT_REFUSED=""
+NOT_PASSED=""
 for name in GIT_COMMON_DIR GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_CONFIG \
   GIT_CONFIG_COUNT GIT_CONFIG_SYSTEM GIT_CONFIG_PARAMETERS GIT_EXEC_PATH GIT_SSL_NO_VERIFY GIT_SSH_COMMAND \
   GIT_PROXY_COMMAND GIT_SSL_CAINFO GIT_SSL_CAPATH GIT_GRAFT_FILE GIT_SHALLOW_FILE GIT_REPLACE_REF_BASE \
-  NODE_PATH SSL_CERT_FILE SSL_CERT_DIR; do
+  NODE_PATH SSL_CERT_FILE SSL_CERT_DIR GIT_TRACE GIT_TRACE2 GIT_TRACE2_EVENT GIT_TRACE_SETUP XDG_CONFIG_HOME \
+  GIT_ASKPASS GIT_NAMESPACE BASH_ENV PERL5OPT PERL5LIB DYLD_INSERT_LIBRARIES GH_CONFIG_DIR; do
+  # macOS's env drops a DYLD_ variable from what it starts, so one that cannot reach the
+  # script this way is not tried here.
+  if ! env "${name}=" bash -c "declare -p ${name}" >/dev/null 2>&1; then
+    NOT_PASSED+="${name} "
+    continue
+  fi
   SIGN_ENV=("${name}=")
   sign_piped "${UNUSED_LINE}" "${NEVER_READ}" v1.2.0 "${ZIP}" "${KEYS}/plain.pem"
   [[ "${STATUS}" == "1" && "${OUT}" == *"refused: ${name} is set"* ]] || NOT_REFUSED+="${name} "
 done
 SIGN_ENV=()
 check "check 1, each other variable that aims git elsewhere is refused" equals "${NOT_REFUSED}" ""
+if [[ -n "${NOT_PASSED}" ]]; then
+  skip "check 1, ${NOT_PASSED% }: env does not pass it on here, so the refusal is not tried"
+fi
 
 # A full copy of origin under another path: only the pinned URL tells them apart.
 cp -R "${WORK}/origin.git" "${WORK}/elsewhere.git"
@@ -677,12 +722,17 @@ sign_piped "${UNUSED_LINE}" "${NEVER_READ}" v1.2.0 "${ZIP}" "${KEYS}/plain.pem"
 sign_git checkout -q -- scripts/trust-document.sh
 sign_refused "check 3, a changed script" "changed or untracked files"
 sign_git commit -q --allow-empty -m "never pushed"
+NEVER_PUSHED="$(sign_git rev-parse HEAD)"
 sign_piped "${UNUSED_LINE}" "${NEVER_READ}" v1.2.0 "${ZIP}" "${KEYS}/plain.pem"
 sign_git reset -q --hard "HEAD~1"
 sign_refused "check 3, a commit origin does not have" "not the tip of origin's main"
+check "check 3, a commit origin does not have: the first 8 hex digits of neither commit are shown" \
+  lacks_both "${OUT}" "${NEVER_PUSHED:0:8}" "$(typed_for v1.3.5)"
 
 sign_piped "${UNUSED_LINE}" "${NEVER_READ}" v1.6.0 "${ZIP}" "${KEYS}/plain.pem"
-sign_refused "check 4, a tag this checkout moved" "the tag v1.6.0 is $(commit_of v1.3.4) in this checkout and $(commit_of v1.3.5) on origin"
+sign_refused "check 4, a tag this checkout moved" "the tag v1.6.0 is $(masked_commit_of v1.3.4) in this checkout and $(masked_commit_of v1.3.5) on origin"
+check "check 4, a tag this checkout moved: the first 8 hex digits of neither commit are shown" \
+  lacks_both "${OUT}" "$(typed_for v1.3.4)" "$(typed_for v1.3.5)"
 sign_piped "${UNUSED_LINE}" "${NEVER_READ}" v1.5.0 "${ZIP}" "${KEYS}/plain.pem"
 sign_refused "check 4, a tag origin does not have" "origin has no tag v1.5.0"
 sign_piped "${UNUSED_LINE}" "${NEVER_READ}" v1.7.0 "${ZIP}" "${KEYS}/plain.pem"
@@ -690,6 +740,8 @@ sign_refused "check 4, a tag this checkout does not have" "this checkout has no 
 
 sign_piped "${UNUSED_LINE}" "${NEVER_READ}" v1.4.0 "${ZIP}" "${KEYS}/plain.pem"
 sign_refused "check 5, a tag whose commit is not on main" "is not on origin's main"
+check "check 5, a tag whose commit is not on main: the first 8 hex digits of its commit are not shown" \
+  lacks "${OUT}" "$(typed_for v1.4.0)"
 
 # v1.1.0 is the lightweight tag: reaching this refusal shows check 4 took its one line.
 sign_piped "${UNUSED_LINE}" "${NEVER_READ}" v1.1.0 "${ZIP}" "${KEYS}/plain.pem"
@@ -723,6 +775,21 @@ sign_piped "${UNUSED_LINE}" "${EIGHT_DIGITS:0:7}" v1.2.0 "${ZIP}" "${KEYS}/plain
 sign_refused "check 9, seven of the eight digits" "not the first 8 hex digits of the commit of v1.2.0"
 sign_piped "${UNUSED_LINE}" "" v1.2.0 "${ZIP}" "${KEYS}/plain.pem"
 sign_refused "check 9, nothing typed" "not the first 8 hex digits of the commit of v1.2.0"
+# What is shown above the question holds the answer, through the stand-in git: in the tag
+# commit's subject, then in capitals, in a file's name.
+printf 'release %s\n' "${EIGHT_DIGITS}" > "${GIT_SUBJECT_SAYS}"
+sign_piped "${UNUSED_LINE}" "${NEVER_READ}" v1.2.0 "${ZIP}" "${KEYS}/plain.pem"
+rm "${GIT_SUBJECT_SAYS}"
+sign_refused "check 9, a subject that holds the commit's first 8 hex digits" \
+  "what would be shown before the question holds the first 8 hex digits of the commit of v1.2.0"
+check "check 9, a subject that holds the commit's first 8 hex digits: they are not shown" lacks "${OUT}" "${EIGHT_DIGITS}"
+printf 'scripts/%s.sh\n' "$(printf '%s' "${EIGHT_DIGITS}" | tr 'a-f' 'A-F')" > "${GIT_STAT_SAYS}"
+sign_piped "${UNUSED_LINE}" "${NEVER_READ}" v1.2.0 "${ZIP}" "${KEYS}/plain.pem"
+rm "${GIT_STAT_SAYS}"
+sign_refused "check 9, a file's name that holds the commit's first 8 hex digits in capitals" \
+  "what would be shown before the question holds the first 8 hex digits of the commit of v1.2.0"
+check "check 9, a file's name that holds them in capitals: they are not shown" \
+  lacks "${OUT}" "$(printf '%s' "${EIGHT_DIGITS}" | tr 'a-f' 'A-F')"
 
 sign_piped "${UNUSED_LINE}" "$(typed_for v1.2.0)" v1.2.0 "${ZIP}" "${KEYS}/unlisted.pem"
 check "check 10, a key that is no release key of the document at the tag fails" equals "${STATUS}" "1"
@@ -896,6 +963,34 @@ sign_piped "${UNUSED_LINE}" "$(typed_for v1.2.0)" v1.2.0 "${ZIP}" "${KEYS}/plain
 rm "${LS_SAYS}"
 SHARED_KEPT=8
 check "a hand-over folder of root's with the sticky bit takes the signature" equals "${STATUS}" "0"
+# A hand-over folder of this account's, closed to others, in a folder everyone may write to
+# with no sticky bit: another account could rename it away and put its own in its place.
+mkdir -p "${WORK}/open/inner"
+chmod 700 "${WORK}/open/inner"
+chmod 777 "${WORK}/open"
+if [[ "$(mode_of "${WORK}/open")" == "777" ]]; then
+  SIGN_ENV=("SIGN_RELEASE_OUT_ROOT=${WORK}/open/inner")
+  sign_piped "${UNUSED_LINE}" "$(typed_for v1.2.0)" v1.2.0 "${ZIP}" "${KEYS}/plain.pem"
+  SIGN_ENV=()
+  sign_refused "a hand-over folder below one everyone may write to" "a folder above ${WORK}/open/inner"
+  check "a hand-over folder below one everyone may write to: the refusal names that folder" \
+    contains "${OUT}" "${WORK}/open, a folder above"
+  check "a hand-over folder below one everyone may write to: no folder is left in it" \
+    equals "$(find "${WORK}/open/inner" -mindepth 1 | wc -l | tr -d ' ')" "0"
+else
+  skip "a hand-over folder below one everyone may write to: this file system does not take chmod 777"
+fi
+chmod 755 "${WORK}/open"
+
+# For the short name v1.2.0, git takes a ref refs/v1.2.0 before the tag. One on another
+# commit must not change what the zip is compared with.
+sign_git update-ref refs/v1.2.0 "$(commit_of v1.1.0)"
+rm -f "${NODE_LOG}"
+sign_piped "${UNUSED_LINE}" "$(typed_for v1.2.0)" v1.2.0 "${ZIP}" "${KEYS}/plain.pem"
+sign_git update-ref -d refs/v1.2.0
+SHARED_KEPT=9
+check "a ref refs/v1.2.0 on another commit: signed" equals "${STATUS}" "0"
+check "the zip check reads the commit of the tag v1.2.0, not that ref's" contains "$(cat "${NODE_LOG}")" "reads $(commit_of v1.2.0)"
 
 echo "── sign-release.sh: usage ──"
 run bash "${SIGN}" --help

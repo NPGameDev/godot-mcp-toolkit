@@ -11,6 +11,8 @@
 #
 #   rc_printable                  filter: each byte that is not printable ASCII or a line
 #                                 break becomes "?"
+#   rc_masked <name>              an object name with its first 8 hex digits masked, as
+#                                 every refusal here prints one
 #   rc_check_environment          refuse while a variable in RC_REFUSED_VARIABLES is set,
 #                                 even to nothing
 #   rc_check_origin               refuse unless origin is RELEASE_ORIGIN_URL
@@ -46,17 +48,20 @@ RC_OBJECT_NAME='^[0-9a-f]{40,64}$'
 RC_TRUST_DOCUMENT_PATH='^trust/trust-([1-9][0-9]{0,8})\.json$'
 RC_EMBEDDED_FILE="addons/godot_mcp_toolkit/self_update/embedded_trust_document.gd"
 RC_EMBEDDED_MARKER="const DOCUMENT := "
-# The variables that aim gh, node, openssl or git at another repository, host,
-# configuration, history, certificate or program. No list of names is complete, so a
-# caller that must be sure starts a release script from an empty environment (env -i);
-# this list refuses what that would have dropped.
+# The variables that aim gh, node, openssl, git, bash or perl at another repository, host,
+# configuration, history, certificate, program or library, or that have git print what it
+# reads, commit ids included. No list of names is complete, so a caller that must be sure
+# starts a release script from an empty environment (env -i); this list refuses what that
+# would have dropped.
 RC_REFUSED_VARIABLES=(
-  GH_REPO GH_HOST NODE_OPTIONS NODE_PATH OPENSSL_CONF SSL_CERT_FILE SSL_CERT_DIR
+  GH_REPO GH_HOST GH_CONFIG_DIR XDG_CONFIG_HOME NODE_OPTIONS NODE_PATH OPENSSL_CONF
+  SSL_CERT_FILE SSL_CERT_DIR BASH_ENV PERL5OPT PERL5LIB DYLD_INSERT_LIBRARIES
   GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR GIT_INDEX_FILE GIT_OBJECT_DIRECTORY
   GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_CONFIG GIT_CONFIG_COUNT GIT_CONFIG_GLOBAL
   GIT_CONFIG_SYSTEM GIT_CONFIG_PARAMETERS GIT_EXEC_PATH GIT_SSL_NO_VERIFY GIT_SSL_CAINFO
-  GIT_SSL_CAPATH GIT_SSH_COMMAND GIT_PROXY_COMMAND GIT_GRAFT_FILE GIT_SHALLOW_FILE
-  GIT_REPLACE_REF_BASE
+  GIT_SSL_CAPATH GIT_SSH_COMMAND GIT_PROXY_COMMAND GIT_ASKPASS GIT_GRAFT_FILE
+  GIT_SHALLOW_FILE GIT_REPLACE_REF_BASE GIT_NAMESPACE GIT_TRACE GIT_TRACE2
+  GIT_TRACE2_EVENT GIT_TRACE_SETUP
 )
 
 rc_refuse() {
@@ -75,6 +80,17 @@ rc_printable() {
 # than the one asked for.
 rc_listed_object() {
   printf '%s\n' "$1" | awk -v ref="$2" '$2 == ref { print $1 }'
+}
+
+# Prints the object name $1 with its first 8 hex digits masked, and anything else as it is.
+# Signing asks for a commit's first 8 hex digits as read on github.com, so no refusal hands
+# them over.
+rc_masked() {
+  if [[ "$1" =~ ${RC_OBJECT_NAME} ]]; then
+    printf '********%s\n' "${1:8}"
+  else
+    printf '%s\n' "$1"
+  fi
 }
 
 # The reason a tool gave for failing: the last line of its output $1.
@@ -121,7 +137,7 @@ rc_check_head() {
   fi
   head="$(git -C "${REPO_ROOT}" rev-parse -q --verify "HEAD^{commit}" 2>/dev/null | tr -d '\r')" || head=""
   if [[ "${head}" != "${RC_REMOTE_HEAD}" ]]; then
-    rc_refuse "HEAD is ${head:-unreadable}, not the tip of origin's ${RELEASE_BRANCH}, ${RC_REMOTE_HEAD}."
+    rc_refuse "HEAD is $(rc_masked "${head:-unreadable}"), not the tip of origin's ${RELEASE_BRANCH}, $(rc_masked "${RC_REMOTE_HEAD}")."
     return 1
   fi
 }
@@ -148,11 +164,11 @@ rc_check_tag() {
     return 1
   fi
   if [[ "${local_commit}" != "${remote}" ]]; then
-    rc_refuse "the tag ${tag} is ${local_commit} in this checkout and ${remote} on origin."
+    rc_refuse "the tag ${tag} is $(rc_masked "${local_commit}") in this checkout and $(rc_masked "${remote}") on origin."
     return 1
   fi
   if ! git -C "${REPO_ROOT}" merge-base --is-ancestor "${local_commit}" "${RC_REMOTE_HEAD}" 2>/dev/null; then
-    rc_refuse "the commit of ${tag}, ${local_commit}, is not on origin's ${RELEASE_BRANCH}."
+    rc_refuse "the commit of ${tag}, $(rc_masked "${local_commit}"), is not on origin's ${RELEASE_BRANCH}."
     return 1
   fi
   RC_COMMIT="${local_commit}"
@@ -231,17 +247,19 @@ rc_checks_1_to_6() {
 }
 
 rc_check_zip() {
-  local tag="$1" zip="$2" folder
+  local tag="$1" zip="$2" ref="refs/tags/$1" folder
   if ! folder="$(cd "$(dirname "${zip}")" 2>/dev/null && pwd)"; then
     rc_refuse "no zip at ${zip}."
     return 1
   fi
   zip="${folder}/$(basename "${zip}")"
-  # The check reads the tag through git in its working directory. A caller's stdin may
-  # hold a passphrase, so node gets none of it. The zip names its own entries, so what the
-  # check prints is filtered; pipefail is set here because the filter's status would
-  # otherwise stand for the check's.
-  if ! (set -o pipefail; cd "${REPO_ROOT}" && node "${REPO_ROOT}/scripts/check-release-zip.mjs" "${zip}" "${tag}" < /dev/null 2>&1 | rc_printable >&2); then
+  # The check reads the tag through git in its working directory, by its full ref: for the
+  # short name, git takes a ref refs/<tag> before the tag, and the zip would be compared
+  # with another commit than the one rc_check_tag and rc_check_trust read. A caller's
+  # stdin may hold a passphrase, so node gets none of it. The zip names its own entries, so
+  # what the check prints is filtered; pipefail is set here because the filter's status
+  # would otherwise stand for the check's.
+  if ! (set -o pipefail; cd "${REPO_ROOT}" && node "${REPO_ROOT}/scripts/check-release-zip.mjs" "${zip}" "${ref}" < /dev/null 2>&1 | rc_printable >&2); then
     rc_refuse "scripts/check-release-zip.mjs does not accept $(basename "${zip}") for ${tag}."
     return 1
   fi

@@ -223,7 +223,7 @@ jobs:
         run: |
           VERSION="$(grep '^version=' addons/godot_mcp_toolkit/plugin.cfg | cut -d'"' -f2)"
           if [ "$GITHUB_REF_TYPE" = "tag" ]; then
-            REVISION="$GITHUB_REF_NAME"
+            REVISION="refs/tags/$GITHUB_REF_NAME"
             ARTIFACT="release-$GITHUB_REF_NAME"
           else
             REVISION="$GITHUB_SHA"

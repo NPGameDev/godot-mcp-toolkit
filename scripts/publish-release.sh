@@ -6,8 +6,8 @@
 # artifact release-<tag>. What users get is decided here, on the maintainer's machine. The
 # signature itself is scripts/sign-release.sh's, run by the maintainer in the signing
 # account through ~/sign/release-sign between draft and attach. No step deletes a release,
-# an asset or an earlier draft's hand-off folder: where a delete is the way on, the step
-# prints it for the maintainer to type.
+# an asset or an earlier draft's hand-off folder, and none marks another release the
+# latest: where one of those is the way on, the step prints it for the maintainer to type.
 #
 # A release carries its zip, its manifest, the manifest's .sig and every trust document the
 # tag commits from trust-2.json up, byte for byte: a client reads the chain of keys from the
@@ -101,22 +101,30 @@ refuse() {
   exit 1
 }
 
-# Refuses for the reason $1 when the way on is a delete, the command $2, and $3 says what
-# follows it. A delete cannot be undone, so no step here runs one: the maintainer types it.
-refuse_until_deleted() {
+# Prints the command $1, the way on, on a line of its own under the line that says the
+# maintainer types it, then $2, what follows it. A delete cannot be undone, and a change to
+# which release is the latest changes what every update check is handed, so no step here
+# runs either.
+print_maintainer_command() {
   {
-    echo "refused: $1"
     echo "  The maintainer types this; no step here runs it:"
-    echo "    $2"
-    echo "  $3"
+    echo "    $1"
+    echo "  $2"
   } >&2
+}
+
+# Refuses for the reason $1 when the way on is the command $2, which only the maintainer
+# types, and $3 says what follows it.
+refuse_until_typed() {
+  echo "refused: $1" >&2
+  print_maintainer_command "$2" "$3"
   exit 1
 }
 
 # Refuses for the reason $1 until the tag's one draft is deleted, then the step $2 runs
 # again. Only a draft is offered for deletion: a published release stays.
 refuse_until_draft_deleted() {
-  refuse_until_deleted "$1" "gh release delete ${TAG} --repo ${RELEASE_SLUG} --yes" \
+  refuse_until_typed "$1" "gh release delete ${TAG} --repo ${RELEASE_SLUG} --yes" \
     "Then run scripts/publish-release.sh $2 ${TAG} again."
 }
 
@@ -195,7 +203,7 @@ sorted_names() {
 require_checked() {
   [[ -f "${CHECKED}" ]] || refuse "${TAG} has not been checked: run scripts/publish-release.sh check ${TAG} first."
   [[ "$(record_value "${CHECKED}" commit)" == "${COMMIT}" ]] \
-    || refuse "the tag ${TAG} is at ${COMMIT}, not the commit that was checked. Run check again."
+    || refuse "the tag ${TAG} is at $(rc_masked "${COMMIT}"), not the commit that was checked. Run check again."
   local name
   for name in zip manifest; do
     local file="${WORK}/${ZIP_NAME}"
@@ -247,7 +255,7 @@ find_release() {
     if printf '%s\n' "${found}" | awk '$2 != "true"' | grep -q .; then
       refuse "more than one release carries the tag $1, and one is published. The maintainer deletes the drafts on GitHub's releases page: a delete by the tag would take the published one."
     fi
-    refuse_until_deleted "more than one release carries the tag $1, all drafts." \
+    refuse_until_typed "more than one release carries the tag $1, all drafts." \
       "gh release delete $1 --repo ${RELEASE_SLUG} --yes" \
       "It deletes one draft each time: type it ${count} times, then run scripts/publish-release.sh draft $1 again."
   fi
@@ -276,8 +284,9 @@ refuse_prerelease() {
   [[ "$1" != "true" ]] || refuse "the draft for ${TAG} is marked a pre-release; clear it on GitHub."
 }
 
-# Downloads the assets named from $3 on, of the release tagged $1, into the folder $2.
-download_assets() {
+# Downloads the assets named from $3 on, of the release tagged $1, into the folder $2, and
+# fails when GitHub does not hand them over, which the caller reports.
+fetch_assets() {
   local tag="$1" folder="$2" name
   shift 2
   local patterns=()
@@ -285,8 +294,24 @@ download_assets() {
     patterns+=(--pattern "${name}")
   done
   mkdir -p "${folder}"
-  gh release download "${tag}" --repo "${RELEASE_SLUG}" --dir "${folder}" "${patterns[@]}" > /dev/null \
-    || setup_error "could not download $* from the release ${tag}."
+  gh release download "${tag}" --repo "${RELEASE_SLUG}" --dir "${folder}" "${patterns[@]}" > /dev/null
+}
+
+# fetch_assets, and a setup error when it fails.
+download_assets() {
+  local tag="$1" folder="$2"
+  shift 2
+  fetch_assets "${tag}" "${folder}" "$@" || setup_error "could not download $* from the release ${tag}."
+}
+
+# Ends attach with the error $1 after the upload of the signature, or its download back,
+# failed. Either can leave a partial asset on the draft, and the next attach would refuse
+# it or fail on it the same way, so the way on is its delete.
+signature_transfer_failed() {
+  echo "error: $1" >&2
+  print_maintainer_command "gh release delete-asset ${TAG} ${SIGNATURE_NAME} --repo ${RELEASE_SLUG} --yes" \
+    "That is the way on if the draft lists ${SIGNATURE_NAME}. Then run scripts/publish-release.sh attach ${TAG} again."
+  exit 2
 }
 
 # Refuses unless each trust document in the folder $1, downloaded back from the release, is
@@ -322,7 +347,8 @@ read_latest() {
 # Refuses when the latest release carries a trust document that the folder $1, the draft's
 # assets, lacks or holds with other bytes. Clients read the chain from the newest release
 # alone, so a release that dropped or changed a document would take it from all of them.
-# Needs read_latest.
+# The draft's documents are the tag's by then, so the tag itself drops or changes it, and
+# the draft can never be published. Needs read_latest and require_tag_documents.
 require_no_regress() {
   local back="$1" name
   [[ -n "${LATEST_DOCUMENTS}" ]] || return 0
@@ -333,7 +359,9 @@ require_no_regress() {
   download_assets "${LATEST_TAG}" "${latest}" "${names[@]}"
   for name in "${names[@]}"; do
     [[ -f "${back}/${name}" ]] && cmp -s "${back}/${name}" "${latest}/${name}" \
-      || refuse "the latest release ${LATEST_TAG} carries ${name}, and the draft for ${TAG} does not carry the same bytes. A release never drops or changes a trust document."
+      || refuse_until_typed "the latest release ${LATEST_TAG} carries ${name}, and the draft for ${TAG} does not carry the same bytes. A release never drops or changes a trust document. The draft is deleted." \
+        "gh release delete ${TAG} --repo ${RELEASE_SLUG} --yes" \
+        "${TAG} itself does not carry ${name} as ${LATEST_TAG} does, so a new draft of it would be refused too: the release goes out under a new tag that does."
   done
 }
 
@@ -365,7 +393,9 @@ require_latest_is_lower() {
   [[ -n "${LATEST_TAG}" ]] \
     || refuse "${RELEASE_SLUG} shows no published release, and ${TAG} is published only over a lower version."
   [[ "${LATEST_TAG}" =~ ${RC_RELEASE_TAG} ]] \
-    || refuse "the latest release is ${LATEST_TAG}, which is not a version. Repair it with gh release edit v<the last version> --latest."
+    || refuse_until_typed "the latest release is $(shown "${LATEST_TAG}"), which is not a version. It is repaired by marking the last version's release the latest." \
+      "gh release edit v<the last version> --repo ${RELEASE_SLUG} --latest" \
+      "Then run scripts/publish-release.sh publish ${TAG} again."
   version_below "${LATEST_TAG#v}" "${VERSION}" \
     || refuse "the latest release is ${LATEST_TAG}, which is not below ${TAG}."
 }
@@ -401,7 +431,7 @@ check() {
   run="$(gh run list --repo "${RELEASE_SLUG}" --workflow release.yml --commit "${COMMIT}" --branch "${TAG}" \
     --status success --limit 1 --json databaseId --jq '.[0].databaseId // empty' | tr -d '\r')" \
     || setup_error "could not list the release.yml runs."
-  [[ -n "${run}" ]] || refuse "no release.yml run on the tag ref ${TAG} (${COMMIT}) has succeeded. Watch the tag's run (gh run watch), or dispatch release.yml on the tag ref."
+  [[ -n "${run}" ]] || refuse "no release.yml run on the tag ref ${TAG} ($(rc_masked "${COMMIT}")) has succeeded. Watch the tag's run (gh run watch), or dispatch release.yml on the tag ref."
   found="$(find_release "${TAG}")"
   [[ -z "${found}" ]] || refuse_release_exists "${found}" check
   [[ -f scripts/check-release-zip.mjs ]] || setup_error "scripts/check-release-zip.mjs is missing."
@@ -447,7 +477,7 @@ draft() {
   for earlier in "${root}/publish-release-${TAG}".*; do
     # -O is false for the pattern itself, which the loop gets when nothing matches.
     if [[ -O "${earlier}" ]]; then
-      refuse_until_deleted "an earlier hand-off folder for ${TAG} is still there: $(shown "${earlier}"). It is removed, with the zip in it." \
+      refuse_until_typed "an earlier hand-off folder for ${TAG} is still there: $(shown "${earlier}"). It is removed, with the zip in it." \
         "rm -r -- $(shown "$(printf '%q' "${earlier}")")" "Then run scripts/publish-release.sh draft ${TAG} again."
     fi
   done
@@ -650,7 +680,7 @@ attach() {
   unsigned="$(sorted_names "${ZIP_NAME}" "${MANIFEST_NAME}" ${DOCUMENTS[@]+"${DOCUMENTS[@]}"})"
   signed="$(sorted_names "${ZIP_NAME}" "${MANIFEST_NAME}" "${SIGNATURE_NAME}" ${DOCUMENTS[@]+"${DOCUMENTS[@]}"})"
   [[ "${names}" == "${unsigned}" || "${names}" == "${signed}" ]] \
-    || refuse "the draft for ${TAG} must hold the zip, the manifest, $(shown_documents) and at most the signature; it holds: ${names//$'\n'/, }"
+    || refuse_until_draft_deleted "the draft for ${TAG} must hold the zip, the manifest, $(shown_documents) and at most the signature; it holds: ${names//$'\n'/, }. The draft is deleted." draft
 
   local back="${SCRATCH}/draft"
   # Nothing is added to a draft that does not hold the files check passed and the tag's
@@ -662,11 +692,13 @@ attach() {
   read_latest
   require_no_regress "${back}"
   if [[ "${names}" == "${unsigned}" ]]; then
-    gh release upload "${TAG}" "${signature}" --repo "${RELEASE_SLUG}" || setup_error "could not upload ${SIGNATURE_NAME}."
+    gh release upload "${TAG}" "${signature}" --repo "${RELEASE_SLUG}" \
+      || signature_transfer_failed "could not upload ${SIGNATURE_NAME} to the draft for ${TAG}."
   fi
-  download_assets "${TAG}" "${back}" "${SIGNATURE_NAME}"
+  fetch_assets "${TAG}" "${back}" "${SIGNATURE_NAME}" \
+    || signature_transfer_failed "could not download ${SIGNATURE_NAME} back from the draft for ${TAG}."
   cmp -s "${back}/${SIGNATURE_NAME}" "${signature}" \
-    || refuse_until_deleted "the draft's ${SIGNATURE_NAME} is not the one in ${folder}. That asset is deleted from the draft." \
+    || refuse_until_typed "the draft's ${SIGNATURE_NAME} is not the one in ${folder}. That asset is deleted from the draft." \
       "gh release delete-asset ${TAG} ${SIGNATURE_NAME} --repo ${RELEASE_SLUG} --yes" \
       "Then run scripts/publish-release.sh attach ${TAG} again."
 
@@ -752,8 +784,11 @@ publish() {
     || refuse "the release for ${TAG} is not the draft the reader check passed for. Run attach again."
   expected="$(sorted_names "${ZIP_NAME}" "${MANIFEST_NAME}" "${SIGNATURE_NAME}" ${DOCUMENTS[@]+"${DOCUMENTS[@]}"})"
   names="$(asset_names "${id}")" || setup_error "could not read the assets of the release for ${TAG}."
-  [[ "${names}" == "${expected}" ]] \
-    || refuse "the release for ${TAG} must hold the zip, the manifest, the signature and $(shown_documents), and nothing else."
+  if [[ "${names}" != "${expected}" ]]; then
+    local reason="the release for ${TAG} must hold the zip, the manifest, the signature and $(shown_documents), and nothing else."
+    [[ "${is_draft}" == "true" ]] || refuse "${reason}"
+    refuse_until_draft_deleted "${reason} The draft is deleted." draft
+  fi
 
   local back="${SCRATCH}/release" name file
   download_assets "${TAG}" "${back}" "${ZIP_NAME}" "${MANIFEST_NAME}" "${SIGNATURE_NAME}" ${DOCUMENTS[@]+"${DOCUMENTS[@]}"}

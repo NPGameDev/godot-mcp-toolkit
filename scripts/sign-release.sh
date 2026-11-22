@@ -24,13 +24,16 @@
 #       subject, the release before and what changed since, but not the commit: it names
 #       the tag's page on github.com, and takes the first 8 hex digits of the commit shown
 #       there. Anything else typed is refused, and so is a tag whose own commit carries
-#       the release tag before it. It asks for the key's passphrase, signs, and keeps the
-#       signature only if a release key of the tag's highest trust document verifies it.
-#       A non-RSA key is refused.
+#       the release tag before it, or for which what is shown holds those 8 hex digits
+#       themselves. It asks for the key's passphrase, signs, and keeps the signature only
+#       if a release key of the tag's highest trust document verifies it. A non-RSA key is
+#       refused.
 #       The manifest and its .sig go to a new folder under /Users/Shared, readable from
 #       every account; SIGN_RELEASE_OUT_ROOT names another parent folder, which must be
-#       this account's own or root's with the sticky bit set. The last line printed is
-#       "OUT <folder>". A refusal leaves no folder.
+#       this account's own or root's with the sticky bit set, and each folder above it
+#       this account's or root's, open to others' writes only with the sticky bit set.
+#       The last line printed is "OUT <folder>", that parent's path with its symbolic
+#       links resolved. A refusal leaves no folder.
 #       With stdin a pipe, its one line is the passphrase, and the 8 hex digits are read
 #       from file descriptor 3 if it is open, else from the terminal.
 #   scripts/sign-release.sh --verify <manifest>
@@ -103,10 +106,10 @@ verifies_under_a_release_key() {
   return 1
 }
 
-# Whether a signature may be left in the folder $1: one that is this account's own and
-# that no other account may write to, or one of root's or this account's with the sticky
-# bit set, as /Users/Shared is. In any other folder an account other than this one and
-# root could rename or replace what signing leaves there.
+# Whether a signature may be left in the folder $1, a path with no symbolic link in it: one
+# that is this account's own and that no other account may write to, or one of root's or
+# this account's with the sticky bit set, as /Users/Shared is. In any other folder an
+# account other than this one and root could rename or replace what signing leaves there.
 out_root_is_safe() {
   local mode owner me
   me="$(id -u)"
@@ -114,6 +117,24 @@ out_root_is_safe() {
   [[ "${owner}" == "${me}" || "${owner}" == "0" ]] || return 1
   [[ "${mode:9:1}" != [tT] ]] || return 0
   [[ "${owner}" == "${me}" && "${mode:5:1}" != "w" && "${mode:8:1}" != "w" ]]
+}
+
+# Prints the first folder above $1, a path with no symbolic link in it, through which an
+# account other than this one and root could rename $1 away and put another folder in its
+# place: one that such an account owns, or that its group or everyone may write to with no
+# sticky bit. Prints nothing when there is none.
+unsafe_folder_above() {
+  local folder="$1" mode owner me
+  me="$(id -u)"
+  while [[ -n "${folder}" ]]; do
+    folder="${folder%/*}"
+    read -r mode _ owner _ < <(ls -ldn -- "${folder:-/}/.") || { printf '%s\n' "${folder:-/}"; return 0; }
+    if [[ "${owner}" != "${me}" && "${owner}" != "0" ]] \
+      || [[ ( "${mode:5:1}" == "w" || "${mode:8:1}" == "w" ) && "${mode:9:1}" != [tT] ]]; then
+      printf '%s\n' "${folder:-/}"
+      return 0
+    fi
+  done
 }
 
 # Whether the release tag $1 is a lower version than the release tag $2. The three numbers
@@ -141,6 +162,7 @@ is_lower_release() {
 # read them; nothing here can check that it was the place. Needs rc_check_tag.
 confirm_commit() {
   local tag="$1" name previous="" previous_commit previous_date before base range since count typed=""
+  local subject commits changes shown
   local page="https://github.com/${RELEASE_SLUG}/releases/tag/${tag}"
   # The release before is the highest release tag the commit reaches whose version is
   # lower than this tag's. A tag of a higher version can sit on the same commit or on an
@@ -166,6 +188,8 @@ confirm_commit() {
     # every one.
     previous_date="$(git --no-pager -C "${REPO_ROOT}" log -1 --no-color --format=%cI "${previous_commit}" | tr -d '\r' | sed 's/Z$/+00:00/')" \
       || refuse "could not read the commit of ${previous}."
+    # The release before is shown with its commit and that commit's date: a tag planted
+    # close below this one would shorten the list of commits, and shows as a recent commit.
     before="${previous} ${previous_commit} ${previous_date}"
   else
     # No release before this one: everything the commit holds is new, so the comparison
@@ -177,19 +201,29 @@ confirm_commit() {
   fi
   count="$(git -C "${REPO_ROOT}" rev-list --count "${range}" | tr -d '\r')" \
     || refuse "could not read the history of ${tag}."
-  echo "Tag      ${tag}"
-  echo "Subject  $(git --no-pager -C "${REPO_ROOT}" log -1 --no-color --format=%s "${RC_COMMIT}" | rc_printable)"
-  # The release before, with its commit and that commit's date: a tag planted close below
-  # this one would shorten the list that follows, and shows here as a recent commit.
-  echo "Before   ${before}"
-  echo "Commits ${since} (${count}):"
+  subject="$(git --no-pager -C "${REPO_ROOT}" log -1 --no-color --format=%s "${RC_COMMIT}" | rc_printable)" \
+    || refuse "could not read the commit of ${tag}."
   # Subjects only: a commit's short name here would hand over the digits asked for below.
-  git --no-pager -C "${REPO_ROOT}" log --no-color --format='  %s' "${range}" | rc_printable \
+  commits="$(git --no-pager -C "${REPO_ROOT}" log --no-color --format='  %s' "${range}" | rc_printable)" \
     || refuse "could not read the history of ${tag}."
-  echo "Changes under scripts/ and trust/ ${since}:"
-  git --no-pager -C "${REPO_ROOT}" diff --no-color --no-ext-diff --stat "${base}" "${RC_COMMIT}" -- scripts/ trust/ | rc_printable \
+  changes="$(git --no-pager -C "${REPO_ROOT}" diff --no-color --no-ext-diff --stat "${base}" "${RC_COMMIT}" -- scripts/ trust/ | rc_printable)" \
     || refuse "could not compare ${tag} with the release before it."
-  echo "Commit   not shown here: open ${page} and follow its commit link."
+  shown="Tag      ${tag}
+Subject  ${subject}
+Before   ${before}
+Commits ${since} (${count}):
+${commits}
+Changes under scripts/ and trust/ ${since}:${changes:+
+${changes}}
+Commit   not shown here: open ${page} and follow its commit link."
+  # Whoever writes a commit chooses its subject and its files' names, and whoever pushes a
+  # tag chooses the tag's name. A commit whose own first 8 hex digits are among them, found
+  # by trying about 2^32 commits, would put the answer above the question, so nothing is
+  # shown and nothing is signed.
+  if grep -qiF -- "${RC_COMMIT:0:8}" <<< "${shown}"; then
+    refuse "what would be shown before the question holds the first 8 hex digits of the commit of ${tag}, in a tag's name, a commit's subject or a file's name; nothing is shown and nothing is signed."
+  fi
+  printf '%s\n' "${shown}"
 
   local prompt="First 8 hex digits of the commit shown there: "
   if [[ -t 0 ]]; then
@@ -226,15 +260,23 @@ verify_manifest() {
 sign_release() {
   [[ $# -eq 3 ]] || { usage >&2; exit 2; }
   local tag="$1" zip="$2" key="$3" out_root="${SIGN_RELEASE_OUT_ROOT:-/Users/Shared}"
-  local version manifest_name zip_copy manifest passphrase="" out
+  local version manifest_name zip_copy manifest passphrase="" out resolved above
   [[ "${tag}" =~ ${RC_RELEASE_TAG} ]] || refuse "${tag} is no release tag; one reads v<major>.<minor>.<patch>."
   [[ -f "${zip}" ]] || refuse "no zip at ${zip}."
   [[ -f "${key}" ]] || refuse "no key at ${key}."
   command -v node >/dev/null 2>&1 || { echo "error: node is required to sign." >&2; exit 2; }
   [[ -d "${out_root}" ]] \
     || { echo "error: no folder at ${out_root} to leave the signature in; SIGN_RELEASE_OUT_ROOT names another." >&2; exit 2; }
-  out_root_is_safe "${out_root}" \
+  # Resolved once: the folders checked below are the ones the signature goes through, with
+  # no symbolic link left to point elsewhere later.
+  resolved="$(cd "${out_root}" && pwd -P)" \
+    || { echo "error: could not resolve ${out_root} to leave the signature in." >&2; exit 2; }
+  out_root_is_safe "${resolved}" \
     || refuse "${out_root} is neither this account's own and closed to other accounts nor root's or this account's with the sticky bit set; a signature is left in no other folder."
+  above="$(unsafe_folder_above "${resolved}")"
+  [[ -z "${above}" ]] \
+    || refuse "${above}, a folder above ${out_root}, is another account's, or others may write to it with no sticky bit set, so the folder the signature goes to could be swapped for another; a signature is left under no such folder."
+  out_root="${resolved}"
 
   # The zip arrives through a folder other accounts write to, so every check and the
   # manifest read this private copy. The copy's name is the release's own: the manifest
