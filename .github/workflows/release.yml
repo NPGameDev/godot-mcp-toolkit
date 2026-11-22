@@ -67,7 +67,7 @@ jobs:
     needs: [behavioral, floor]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # A dispatch from a branch has ref_type 'branch' and no tag to compare, so this
       # check would spuriously fail — skip it off a tag. The sibling-pin steps below
@@ -98,7 +98,7 @@ jobs:
         run: |
           PIN="$(grep 'SIBLING_PIN_SERVER:' .github/workflows/cross-version.yml | sed -E 's/.*"([0-9a-f]+)".*/\1/')"
           echo "SIBLING_PIN_SERVER=$PIN" >> "$GITHUB_ENV"
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: github.ref_type == 'tag'
         with:
           repository: NPGameDev/godot-mcp-server
@@ -135,8 +135,7 @@ jobs:
       # the composite's launch/poll-6550 idiom, and assert the plugin's WS server
       # comes up ("[MCPServer] listening" in the editor log + the port serving).
       - name: Setup Godot 4.7.0 (zip install-smoke)
-        # pinned to v2.4.1 — update tag manually after reviewing changelogs
-        uses: chickensoft-games/setup-godot@v2.4.1
+        uses: chickensoft-games/setup-godot@f166999204a4f2722c6fe042fbaa3b3ea0d9c789 # v2.4.1
         with:
           version: "4.7.0"
           use-dotnet: false
