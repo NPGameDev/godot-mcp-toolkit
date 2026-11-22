@@ -419,9 +419,9 @@ quick operational facts only.
   agent; `release-sign` clones `main` afresh and runs the clone's
   `scripts/sign-release.sh` only while `scripts/` is what the maintainer last
   reviewed. An agent may run `check`, `draft` and `attach`, never the sign or
-  `publish`. No step deletes a release, an asset or a hand-off folder: a
-  refusal prints the delete for the maintainer to type, and the guard
-  refuses `gh release delete` and `delete-asset` to an agent.
+  `publish`. No step deletes a release, an asset or an earlier draft's
+  hand-off folder: a refusal prints the delete for the maintainer to type,
+  and the guard refuses `gh release delete` and `delete-asset` to an agent.
   `workflow_dispatch` takes no input: from a branch it is the **dry run** (the
   tag-only checks skipped, artifact `release-untagged-<sha>`), and on the tag
   ref it is the re-run after a transient failure.

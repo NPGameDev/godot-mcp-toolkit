@@ -432,6 +432,10 @@ rotating past a document with a new field, teach the script that field, or the n
   reads nothing else it is handed but the key; and `SIGN_RELEASE_OUT_ROOT` can move its output
   folder, but only to a parent where no account other than the signing one and root can rename or
   replace what it leaves. `release-sign` passes no such variable.
+- **The sign compares only 8 hex digits of the commit.** That is 32 bits of its SHA-1 name. A commit
+  made to share them with the one on the tag's page costs about 2^32 SHA-1 computations for each
+  release it targets, and it also needs a tag on that commit and a sign run on a clone that did not
+  come from GitHub. That cost is accepted.
 - **It cannot force an update.** Someone with repo access can keep an old release as latest. A manifest's
   `expires_at` informs and never refuses.
 - **With no absolute data folder there is no store.** With no `APPDATA` or `HOME`, Godot can answer `.`, the

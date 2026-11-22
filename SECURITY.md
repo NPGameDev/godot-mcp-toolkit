@@ -62,8 +62,8 @@ exposed to the network.
 project allows it (`mcp_toolkit/updates/install_mode`, asked in the setup
 wizard), and only after you click **Update**. It installs only a release whose
 update manifest is signed by a release key that the latest trust document
-lists. The first trust document is embedded in each release, in
-`addons/godot_mcp_toolkit/self_update/embedded_trust_document.gd`. Later ones
+lists. Each release embeds the newest trust document its tag holds, in
+`addons/godot_mcp_toolkit/self_update/embedded_trust_document.gd`. Newer ones
 are assets of each release: the toolkit downloads them from the release it is
 checking, beside that release's manifest, and they count only when enough of
 the previous document's root keys signed them. They are kept once per

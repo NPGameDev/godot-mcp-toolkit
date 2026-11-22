@@ -329,12 +329,14 @@ documents with the zip, and they go public with the release.
 `publish` ends by printing the line for `trust/released-manifests.txt`. Add it through a pull request
 from `chore/ledger-<version>`.
 
-A step that refuses names what is missing. Until `publish`, nothing is public. No step deletes
-anything: when a draft, its `.sig` or a hand-off folder `draft` left under `/Users/Shared` must go,
-the step prints the `gh release delete`, `gh release delete-asset` or `rm -r` line for you to type,
-and the step to run after it. The guard on your machines refuses both `gh` deletes to a coding
-agent. A published release is never offered for deletion; `RELEASING.md` lists each case. `attach`
-and `publish` refuse a draft marked a pre-release. After `publish` the release is immutable, and a
+A step that refuses names what is missing. Until `publish`, nothing is public. No step deletes a
+release, an asset or an earlier draft's hand-off folder, and none marks another release the latest:
+when a draft, its `.sig` or a hand-off folder an earlier `draft` left under `/Users/Shared` must go,
+or the last version's release must be marked the latest, the step prints the `gh release delete`,
+`gh release delete-asset`, `rm -r` or `gh release edit --latest` line for you to type, and the step
+to run after it. The guard on your machines refuses both `gh` deletes to a coding agent. A published
+release is never offered for deletion; `RELEASING.md` lists each case. `attach` and `publish` refuse
+a draft marked a pre-release. After `publish` the release is immutable, and a
 failed check in that step is fixed forward.
 
 Get the full 40-character SHA for the listings, since the forms reject a short SHA:

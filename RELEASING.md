@@ -227,9 +227,13 @@ records only keep the steps in order: `publish` checks again what it reads
 itself from the tag, from `origin` and from the draft's bytes. The sign reads no
 record: it checks the clone, the tag and the zip itself. The steps marked *agent* may be run by a coding
 agent helping with the release; the other two are typed by the maintainer.
-Every step first refuses when a variable that would aim `git`, `gh`, `node` or
-`openssl` somewhere else is set, or when `origin` is not the URL pinned in
-`scripts/lib/release_identity.sh`.
+Every step first refuses when a variable that would aim `git`, `gh`, `node`,
+`openssl`, `bash` or `perl` somewhere else, or have `git` print what it reads,
+is set, or when `origin` is not the URL pinned in
+`scripts/lib/release_identity.sh`. A VS Code terminal sets `GIT_ASKPASS`, one
+of those variables, so run the steps from a plain terminal. A refusal that
+names a commit prints it with its first 8 hex digits masked, as `********`
+and the rest: those digits are what the sign asks for.
 
 1. `scripts/publish-release.sh check vX.Y.Z` (*agent*) refuses unless a
    `release.yml` run on the tag ref succeeded: the tag push, or a dispatch on
@@ -267,7 +271,8 @@ Every step first refuses when a variable that would aim `git`, `gh`, `node` or
    and a folder for the signature that fails the rule below. It then copies
    the zip, and reads nothing else it is handed but the key. After that it
    refuses, in this order, when:
-   - a variable that aims `git`, `gh`, `node` or `openssl` elsewhere is set
+   - a variable that aims `git`, `gh`, `node`, `openssl`, `bash` or `perl`
+     elsewhere, or has `git` print what it reads, is set
      (`scripts/lib/release_checks.sh` lists them);
    - `origin` is not the pinned URL;
    - the clone has changed or untracked files, or is not at the tip of
@@ -288,15 +293,20 @@ Every step first refuses when a variable that would aim `git`, `gh`, `node` or
    `https://github.com/NPGameDev/godot-mcp-toolkit/releases/tag/vX.Y.Z`, follow
    its commit link, and type the first 8 hex digits of the commit shown there;
    anything else is refused, and so is a tag whose own commit carries the
-   release tag before it. It keeps the `.sig` only when a release key of the
-   tag's highest trust document verifies it, and refuses a key that is not
-   RSA. The manifest and its `.sig` land
-   in a new folder, `sign-release-vX.Y.Z.<random>` under `/Users/Shared`
+   release tag before it. It also refuses, and shows nothing, when what it
+   would show holds those 8 hex digits, in upper or lower case, in a tag's
+   name, a commit's subject or a file's name. It keeps the `.sig` only when a
+   release key of the tag's highest trust document verifies it, and refuses
+   a key that is not RSA. The manifest and its `.sig` land in a new folder,
+   `sign-release-vX.Y.Z.<random>` under `/Users/Shared`
    (`SIGN_RELEASE_OUT_ROOT` names another parent, which must be that account's
    own with no write for group or others, or root's or that account's with
-   the sticky bit set; `release-sign` passes no such variable, so through it
-   the folder is always under `/Users/Shared`). The last line printed is
-   `OUT <folder>`.
+   the sticky bit set, and each folder above it must be that account's or
+   root's, writable by others only with the sticky bit set; `release-sign`
+   passes no such variable, so through it the folder is always under
+   `/Users/Shared`). The last line printed is `OUT <folder>`, the path with
+   its symbolic links resolved: on macOS, `/var/...` prints as
+   `/private/var/...`.
 4. `scripts/publish-release.sh attach vX.Y.Z [<folder>]` (*agent*) takes the
    manifest and the `.sig` from the sign's folder, and neither file may be a
    symlink. With no folder named it looks under `/Users/Shared`, or under
@@ -337,10 +347,11 @@ Every step first refuses when a variable that would aim `git`, `gh`, `node` or
    longer change. Run again on a release it has already published, `publish`
    publishes nothing and repeats the checks.
 
-No step deletes anything. When a step can go on only after a delete, it
-refuses, prints the exact command under "The maintainer types this; no step
-here runs it:" and names the step to run after it. The guard on the
-maintainer's machines refuses `gh release delete` and
+No step deletes a release, an asset or an earlier draft's hand-off folder,
+and none marks another release the latest. When a step can go on only after
+one of those, it stops, prints the exact command under "The maintainer types
+this; no step here runs it:" and names the step to run after it. The guard
+on the maintainer's machines refuses `gh release delete` and
 `gh release delete-asset` from a coding agent, so the maintainer types each
 one. The command is one of these:
 
@@ -348,25 +359,38 @@ one. The command is one of these:
 gh release delete vX.Y.Z --repo NPGameDev/godot-mcp-toolkit --yes
 gh release delete-asset vX.Y.Z godot-mcp-toolkit-<version>.update.json.sig --repo NPGameDev/godot-mcp-toolkit --yes
 rm -r -- /Users/Shared/publish-release-vX.Y.Z.<random>
+gh release edit v<the last version> --repo NPGameDev/godot-mcp-toolkit --latest
 ```
 
 - `gh release delete` deletes the tag's draft when a draft already carries
   the tag (`check`, `draft`), when its zip and manifest are not the checked
-  ones (`attach`), or when one of its trust documents is not the tag's
-  (`attach`, `publish`). Then `draft` runs again, or `check` when `check`
-  refused. When several drafts carry the tag, the line deletes one each time
-  and is typed once per draft.
+  ones (`attach`), when it lacks an expected asset or holds one more
+  (`attach`, `publish`), or when one of its trust documents is not the
+  tag's (`attach`, `publish`). Then `draft` runs again, or `check` when
+  `check` refused. When several drafts carry the tag, the line deletes one
+  each time and is typed once per draft.
+- `gh release delete` is printed too when the draft lacks or changes a trust
+  document the latest release carries (`attach`, `publish`). The draft holds
+  the tag's own documents by then, so a new draft of the tag would be refused
+  the same way: the release goes out under a new tag that carries the
+  document.
 - `gh release delete-asset` removes the draft's `.sig` when it is not the one
-  in the sign's folder (`attach`). Then `attach` runs again.
+  in the sign's folder (`attach`). Then `attach` runs again. When the upload
+  of the `.sig`, or its download back, fails, `attach` ends with an error,
+  not a refusal, and prints the same line, to type when the draft lists the
+  `.sig`: a failed upload can leave part of one there.
 - `rm -r` removes a hand-off folder an earlier draft of the tag left
   (`draft`), with the zip in it. Then `draft` runs again.
+- `gh release edit --latest` marks the last version's release the latest
+  when the current latest release is not a version (`publish`). Then
+  `publish` runs again.
 
 A published release is never offered for deletion. When the release that
-carries the tag is published, or a trust document of a published release is
-not the tag's, the step refuses with no command. When a published release
-and a draft share the tag, it prints none either: `gh release delete` by tag
-would take the published one, so the maintainer deletes the draft on
-GitHub's releases page.
+carries the tag is published, or a published release's assets or trust
+documents are not the expected ones, the step refuses with no command. When
+a published release and a draft share the tag, it prints none either:
+`gh release delete` by tag would take the published one, so the maintainer
+deletes the draft on GitHub's releases page.
 
 A release whose tag holds a new trust document takes the same five steps: the
 document is one of the release's assets, so it goes public with the release.
