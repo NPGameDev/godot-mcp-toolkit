@@ -18,7 +18,7 @@
 #   ut_embed_trust <addon-dir> <private-pem> <public-pem>
 #                                       make the toolkit at <addon-dir> trust <public-pem>:
 #                                       a first trust document with it as the root and
-#                                       the release key, signed by <private-pem>, becomes
+#                                       the release key, signed by <private-pem>, replaces
 #                                       the document the toolkit embeds
 #   ut_install_old_toolkit <repo-root> <addon-dir> <version> <private-pem> <public-pem> <own-file>
 #                                       copy this tree's toolkit to <addon-dir> at
@@ -91,15 +91,16 @@ ut_make_key() {
 
 # The embedded document is read without its signatures, but a signed one is what a
 # release ships, so the toolkit under test reads the same shape. trust-document.sh's
-# sign reads a passphrase line from a pipe even for a plain key.
+# sign reads a passphrase line from a pipe even for a plain key. The copy carries the
+# release's own document, which the test key never signed, so the whole line goes.
 ut_embed_trust() {
   local addon="$1" private_pem="$2" public_pem="$3"
-  local tool target="${addon}/self_update/embedded_trust_document.gd" empty='const DOCUMENT := ""'
+  local tool target="${addon}/self_update/embedded_trust_document.gd" marker='const DOCUMENT := '
   tool="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/trust-document.sh"
   local text
   text="$(cat "${target}")" || return 1
-  if [[ "${text}" != *"${empty}"* ]]; then
-    echo "ERROR: ${target} does not hold an empty document" >&2
+  if [[ "${text}" != *"${marker}"* ]]; then
+    echo "ERROR: ${target} holds no DOCUMENT constant" >&2
     return 1
   fi
   local folder
@@ -111,9 +112,12 @@ ut_embed_trust() {
   document="$(cat "${folder}/trust-1.json")"
   rm -f "${folder}/trust-1.json"
   rmdir "${folder}"
-  # Split around the placeholder: macOS's bash 3.2 keeps the quotes of a quoted ${x/p/"r"} replacement.
-  local before="${text%%"${empty}"*}" after="${text#*"${empty}"}"
-  printf '%s%s%s\n' "${before}" "const DOCUMENT := '${document}'" "${after}" > "${target}"
+  # Split around the constant's line: macOS's bash 3.2 keeps the quotes of a quoted ${x/p/"r"} replacement.
+  local before="${text%%"${marker}"*}" rest="${text#*"${marker}"}" after=""
+  if [[ "${rest}" == *$'\n'* ]]; then
+    after=$'\n'"${rest#*$'\n'}"
+  fi
+  printf '%s%s%s\n' "${before}" "${marker}'${document}'" "${after}" > "${target}"
 }
 
 ut_install_old_toolkit() {
