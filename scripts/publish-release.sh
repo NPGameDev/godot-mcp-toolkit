@@ -5,7 +5,9 @@
 # The release workflow only builds: it uploads the zip and the update manifest as the
 # artifact release-<tag>. What users get is decided here, on the maintainer's machine. The
 # signature itself is scripts/sign-release.sh's, run by the maintainer in the signing
-# account between draft and attach.
+# account through ~/sign/release-sign between draft and attach. No step deletes a release,
+# an asset or an earlier draft's hand-off folder: where a delete is the way on, the step
+# prints it for the maintainer to type.
 #
 # A release carries its zip, its manifest, the manifest's .sig and every trust document the
 # tag commits from trust-2.json up, byte for byte: a client reads the chain of keys from the
@@ -97,6 +99,25 @@ usage() {
 refuse() {
   echo "refused: $*" >&2
   exit 1
+}
+
+# Refuses for the reason $1 when the way on is a delete, the command $2, and $3 says what
+# follows it. A delete cannot be undone, so no step here runs one: the maintainer types it.
+refuse_until_deleted() {
+  {
+    echo "refused: $1"
+    echo "  The maintainer types this; no step here runs it:"
+    echo "    $2"
+    echo "  $3"
+  } >&2
+  exit 1
+}
+
+# Refuses for the reason $1 until the tag's one draft is deleted, then the step $2 runs
+# again. Only a draft is offered for deletion: a published release stays.
+refuse_until_draft_deleted() {
+  refuse_until_deleted "$1" "gh release delete ${TAG} --repo ${RELEASE_SLUG} --yes" \
+    "Then run scripts/publish-release.sh $2 ${TAG} again."
 }
 
 setup_error() {
@@ -216,14 +237,30 @@ shown_documents() {
 # none. The list holds drafts, which a lookup by tag does not, and two drafts can carry one
 # tag.
 find_release() {
-  local found
+  local found count
   found="$(gh api --paginate "repos/${RELEASE_SLUG}/releases?per_page=100" \
     --jq '.[] | select(.tag_name == "'"$1"'") | "\(.id) \(.draft) \(.prerelease)"' | tr -d '\r')" \
     || setup_error "could not list the repository's releases."
-  if [[ "$(printf '%s\n' "${found}" | grep -c .)" -gt 1 ]]; then
-    refuse "more than one release carries the tag $1. Delete the extra drafts on GitHub."
+  count="$(printf '%s\n' "${found}" | grep -c .)"
+  if [[ "${count}" -gt 1 ]]; then
+    # gh release delete takes a published release before any draft of the tag.
+    if printf '%s\n' "${found}" | awk '$2 != "true"' | grep -q .; then
+      refuse "more than one release carries the tag $1, and one is published. The maintainer deletes the drafts on GitHub's releases page: a delete by the tag would take the published one."
+    fi
+    refuse_until_deleted "more than one release carries the tag $1, all drafts." \
+      "gh release delete $1 --repo ${RELEASE_SLUG} --yes" \
+      "It deletes one draft each time: type it ${count} times, then run scripts/publish-release.sh draft $1 again."
   fi
   printf '%s\n' "${found}"
+}
+
+# Refuses because a release carries the tag already: $1 is find_release's line for it and
+# $2 the step to run again once it is gone.
+refuse_release_exists() {
+  local is_draft
+  read -r _ is_draft _ <<< "$1"
+  [[ "${is_draft}" == "true" ]] || refuse "a release for ${TAG} is already on GitHub, and it is published."
+  refuse_until_draft_deleted "a release for ${TAG} is already on GitHub, a draft. To start over, it is deleted." "$2"
 }
 
 # Prints the asset names of the release with id $1, byte-sorted. It fails when GitHub does
@@ -253,12 +290,14 @@ download_assets() {
 }
 
 # Refuses unless each trust document in the folder $1, downloaded back from the release, is
-# the tag's, byte for byte.
+# the tag's, byte for byte. $2 is "true" when the release is a draft, which can be deleted
+# and drafted again.
 require_tag_documents() {
   local name
   for name in ${DOCUMENTS[@]+"${DOCUMENTS[@]}"}; do
-    cmp -s "$1/${name}" "${TAG_TRUST}/${name}" \
-      || refuse "the release's ${name} is not ${TAG}'s trust/${name}. Delete the draft and run draft again."
+    cmp -s "$1/${name}" "${TAG_TRUST}/${name}" && continue
+    [[ "$2" == "true" ]] || refuse "the release's ${name} is not ${TAG}'s trust/${name}."
+    refuse_until_draft_deleted "the release's ${name} is not ${TAG}'s trust/${name}. The draft is deleted." draft
   done
 }
 
@@ -364,7 +403,7 @@ check() {
     || setup_error "could not list the release.yml runs."
   [[ -n "${run}" ]] || refuse "no release.yml run on the tag ref ${TAG} (${COMMIT}) has succeeded. Watch the tag's run (gh run watch), or dispatch release.yml on the tag ref."
   found="$(find_release "${TAG}")"
-  [[ -z "${found}" ]] || refuse "a release for ${TAG} is already on GitHub. check comes before draft: to start over, delete the draft there."
+  [[ -z "${found}" ]] || refuse_release_exists "${found}" check
   [[ -f scripts/check-release-zip.mjs ]] || setup_error "scripts/check-release-zip.mjs is missing."
   command -v node >/dev/null 2>&1 || setup_error "node is required."
 
@@ -399,7 +438,7 @@ draft() {
   require_checked
   local found root="${PUBLISH_RELEASE_HANDOFF_ROOT:-/Users/Shared}"
   found="$(find_release "${TAG}")"
-  [[ -z "${found}" ]] || refuse "a release for ${TAG} is already on GitHub. To start over, delete the draft there."
+  [[ -z "${found}" ]] || refuse_release_exists "${found}" draft
   [[ -d "${root}" ]] || setup_error "no folder ${root} to leave the zip in; PUBLISH_RELEASE_HANDOFF_ROOT names another root."
   # No release carries the tag, so a folder of this account for it is left from a draft
   # that is gone, and the signing account could sign the zip in it. Another account's
@@ -408,7 +447,8 @@ draft() {
   for earlier in "${root}/publish-release-${TAG}".*; do
     # -O is false for the pattern itself, which the loop gets when nothing matches.
     if [[ -O "${earlier}" ]]; then
-      refuse "an earlier hand-off folder for ${TAG} is still there: $(shown "${earlier}"). Remove it, then run draft again."
+      refuse_until_deleted "an earlier hand-off folder for ${TAG} is still there: $(shown "${earlier}"). It is removed, with the zip in it." \
+        "rm -r -- $(shown "$(printf '%q' "${earlier}")")" "Then run scripts/publish-release.sh draft ${TAG} again."
     fi
   done
   make_scratch
@@ -434,7 +474,8 @@ draft() {
     || setup_error "could not create the draft for ${TAG}."
   UNFINISHED_HANDOFF=""
   echo "Drafted ${TAG} with ${ZIP_NAME}, ${MANIFEST_NAME} and $(shown_documents)."
-  echo "Next, the maintainer signs, in the signing account: scripts/sign-release.sh ${TAG} ${handoff}/${ZIP_NAME} <private-key.pem>"
+  echo "Left ${ZIP_NAME} for the signing account in ${handoff}."
+  echo "Next, the maintainer signs, in the signing account's own login session: ~/sign/release-sign ${TAG}"
   echo "Then: scripts/publish-release.sh attach ${TAG}"
 }
 
@@ -616,8 +657,8 @@ attach() {
   # trust documents.
   download_assets "${TAG}" "${back}" "${ZIP_NAME}" "${MANIFEST_NAME}" ${DOCUMENTS[@]+"${DOCUMENTS[@]}"}
   cmp -s "${back}/${ZIP_NAME}" "${WORK}/${ZIP_NAME}" && cmp -s "${back}/${MANIFEST_NAME}" "${WORK}/${MANIFEST_NAME}" \
-    || refuse "the draft for ${TAG} does not hold the zip and manifest that were checked. Delete the draft and run draft again."
-  require_tag_documents "${back}"
+    || refuse_until_draft_deleted "the draft for ${TAG} does not hold the zip and manifest that were checked. The draft is deleted." draft
+  require_tag_documents "${back}" true
   read_latest
   require_no_regress "${back}"
   if [[ "${names}" == "${unsigned}" ]]; then
@@ -625,7 +666,9 @@ attach() {
   fi
   download_assets "${TAG}" "${back}" "${SIGNATURE_NAME}"
   cmp -s "${back}/${SIGNATURE_NAME}" "${signature}" \
-    || refuse "the draft's ${SIGNATURE_NAME} is not the one in ${folder}. Delete that asset from the draft and run attach again."
+    || refuse_until_deleted "the draft's ${SIGNATURE_NAME} is not the one in ${folder}. That asset is deleted from the draft." \
+      "gh release delete-asset ${TAG} ${SIGNATURE_NAME} --repo ${RELEASE_SLUG} --yes" \
+      "Then run scripts/publish-release.sh attach ${TAG} again."
 
   # An earlier pass says nothing about this run's bytes.
   rm -f "${READER_CHECKED}"
@@ -641,12 +684,12 @@ attach() {
   echo "Next, the maintainer publishes: scripts/publish-release.sh publish ${TAG}"
 }
 
-# Everything publish holds a release to, from the bytes downloaded back into the folder $1.
-# The local records play no part: the zip is checked against the tag, the manifest against
-# the one this machine writes for that zip, the signature against the tag's release keys and
-# the trust documents against the tag's.
+# Everything publish holds a release to, from the bytes downloaded back into the folder $1;
+# $2 is "true" while the release is a draft. The local records play no part: the zip is
+# checked against the tag, the manifest against the one this machine writes for that zip,
+# the signature against the tag's release keys and the trust documents against the tag's.
 require_assets_are_the_tag() {
-  local back="$1"
+  local back="$1" is_draft="$2"
   rc_check_zip "${TAG}" "${back}/${ZIP_NAME}" || exit 1
   rc_expected_manifest "${TAG}" "${back}/${ZIP_NAME}" "${SCRATCH}/expected.update.json" || exit 1
   if ! cmp -s "${SCRATCH}/expected.update.json" "${back}/${MANIFEST_NAME}"; then
@@ -656,7 +699,7 @@ require_assets_are_the_tag() {
   fi
   bash "${REPO_ROOT}/scripts/sign-release.sh" --verify "${back}/${MANIFEST_NAME}" \
     || refuse "scripts/sign-release.sh --verify does not accept the release's ${SIGNATURE_NAME}."
-  require_tag_documents "${back}"
+  require_tag_documents "${back}" "${is_draft}"
 }
 
 # The checks on a published release: $1 is its id, $2 the folder its assets were downloaded
@@ -714,7 +757,7 @@ publish() {
 
   local back="${SCRATCH}/release" name file
   download_assets "${TAG}" "${back}" "${ZIP_NAME}" "${MANIFEST_NAME}" "${SIGNATURE_NAME}" ${DOCUMENTS[@]+"${DOCUMENTS[@]}"}
-  require_assets_are_the_tag "${back}"
+  require_assets_are_the_tag "${back}" "${is_draft}"
   for name in zip manifest signature; do
     case "${name}" in
       zip) file="${ZIP_NAME}" ;;

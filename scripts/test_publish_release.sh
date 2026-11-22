@@ -524,6 +524,15 @@ refused() {
   check "$1: writes nothing to GitHub" equals "$(gh_writes)" "0"
 }
 
+# Checks that the last run left the delete $2 to the maintainer: the command printed on a
+# line of its own under the line that says who types it, and no write to GitHub.
+leaves_delete() {
+  check "$1: prints the delete on a line of its own" \
+    equals "$(printf '%s\n' "${OUT}" | grep -c -x -F "    $2" || true)" "1"
+  check "$1: says the maintainer types it" contains "${OUT}" "The maintainer types this; no step here runs it:"$'\n'"    $2"
+  check "$1: runs no delete itself" equals "$(gh_writes)" "0"
+}
+
 # Signs the zip $2 for the tag $1 with the copied sign-release.sh and the key $3, as the
 # signing account does, and sets SIGNED_FOLDER to the folder it names as OUT. Its stdin
 # line is the passphrase a plain key does not need, and file descriptor 3 carries the
@@ -679,10 +688,17 @@ check "the draft's zip is the checked one" same_bytes "$(assets_of 100)/$(zip_na
 check "one new folder publish-release-<tag>.* holds the zip" same_bytes "${HANDOFF}/$(zip_name v1.2.0)" "${BUILT}/v1.2.0/$(zip_name v1.2.0)"
 check "the folder is open to the signing account" equals "$(mode_of "${HANDOFF}")" "755"
 check "the zip in it is readable and not writable by others" equals "$(mode_of "${HANDOFF}/$(zip_name v1.2.0)")" "644"
-check "the sign command names that zip" contains "${OUT}" "scripts/sign-release.sh v1.2.0 ${HANDOFF}/$(zip_name v1.2.0) <private-key.pem>"
+check "the sign command is release-sign's, with the tag alone" \
+  equals "$(printf '%s\n' "${OUT}" | grep -c -x -F "Next, the maintainer signs, in the signing account's own login session: ~/sign/release-sign v1.2.0" || true)" "1"
+check "the hand-off folder is named" contains "${OUT}" "Left $(zip_name v1.2.0) for the signing account in ${HANDOFF}."
+check "the sign script is not named for a run of its own" lacks "${OUT}" "scripts/sign-release.sh v1.2.0"
 publish_release draft v1.2.0
 refused "a tag that already has a draft" "a release for v1.2.0 is already on GitHub"
+leaves_delete "a tag that already has a draft" "gh release delete v1.2.0 --repo ${FAKE_SLUG} --yes"
 check "a refused draft leaves no second folder" equals "$(shared_count publish-release-v1.2.0.)" "1"
+publish_release check v1.2.0
+refused "check: a tag that already has a draft" "a release for v1.2.0 is already on GitHub"
+leaves_delete "check: a tag that already has a draft" "gh release delete v1.2.0 --repo ${FAKE_SLUG} --yes"
 
 echo "── attach, with no folder named ──"
 publish_release attach v1.2.0
@@ -750,6 +766,17 @@ publish_release publish v1.2.0
 check "a published release is checked again" equals "${STATUS}" "0"
 check "a published release is not published twice" equals "$(gh_writes)" "0"
 check "a published release: the run says so" contains "${OUT}" "v1.2.0 is already published; checking it again."
+# A published release is never offered for deletion, and gh release delete <tag> would
+# take it before a draft of the same tag.
+publish_release draft v1.2.0
+refused "draft: a tag already published" "a release for v1.2.0 is already on GitHub, and it is published."
+check "draft: a tag already published: no delete is printed" lacks "${OUT}" "gh release delete"
+cp -R "${FAKE_GITHUB}/releases/100" "${FAKE_GITHUB}/releases/104"
+echo true > "${FAKE_GITHUB}/releases/104/draft"
+publish_release publish v1.2.0
+refused "a draft beside the published release of its tag" "more than one release carries the tag v1.2.0, and one is published."
+check "a draft beside the published release: no delete is printed" lacks "${OUT}" "gh release delete"
+rm -rf "${FAKE_GITHUB}/releases/104"
 publish_release attach v1.2.0 "${SIGNED_1_2_0}"
 refused "attach: a release that is already published" "v1.2.0 is already published."
 
@@ -765,6 +792,7 @@ STALE="${SHARED}/publish-release-v1.3.0.stale"
 mkdir "${STALE}"
 publish_release draft v1.3.0
 refused "draft: a hand-off folder an earlier draft left" "an earlier hand-off folder for v1.3.0 is still there: ${STALE}"
+leaves_delete "draft: a hand-off folder an earlier draft left" "rm -r -- $(printf '%q' "${STALE}")"
 check "draft: the earlier hand-off folder is left as it was" is_folder "${STALE}"
 check "draft: no second hand-off folder is made beside it" equals "$(shared_count publish-release-v1.3.0.)" "1"
 rmdir "${STALE}"
@@ -804,6 +832,7 @@ restore_state v1.2.1 101
 cp "${NOT_A_TAGS_DOCUMENT}" "$(assets_of 101)/trust-2.json"
 publish_release attach v1.2.1 "${SIGNED_1_2_1}"
 refused "attach: a trust document that differs from the tag's" "the release's trust-2.json is not v1.2.1's trust/trust-2.json"
+leaves_delete "attach: a trust document that differs from the tag's" "gh release delete v1.2.1 --repo ${FAKE_SLUG} --yes"
 restore_state v1.2.1 101
 # The latest release is v1.2.0, published above. A trust-2.json there with other bytes is
 # a document the draft would change.
@@ -828,10 +857,13 @@ rm "${FAKE_GITHUB}/assets-unread"
 cp "${BUILT}/other.zip" "$(assets_of 101)/$(zip_name v1.2.1)"
 publish_release attach v1.2.1 "${SIGNED_1_2_1}"
 refused "attach: a draft whose zip is not the checked one" "the draft for v1.2.1 does not hold the zip and manifest that were checked"
+leaves_delete "attach: a draft whose zip is not the checked one" "gh release delete v1.2.1 --repo ${FAKE_SLUG} --yes"
 restore_state v1.2.1 101
 sign_bytes "${KEYS}/unlisted.pem" "${BUILT}/v1.2.1/$(manifest_name v1.2.1)" "$(assets_of 101)/$(signature_name v1.2.1)"
 publish_release attach v1.2.1 "${SIGNED_1_2_1}"
 refused "attach: a signature already on the draft that is not the folder's" "the draft's $(signature_name v1.2.1) is not the one in ${SIGNED_1_2_1}"
+leaves_delete "attach: a signature already on the draft that is not the folder's" \
+  "gh release delete-asset v1.2.1 $(signature_name v1.2.1) --repo ${FAKE_SLUG} --yes"
 restore_state v1.2.1 101
 
 RUN_ENV=("GODOT_BIN_4_7=${STUB}/godot-4.2")
@@ -901,6 +933,8 @@ mv "${HELD}/away" "${FAKE_GITHUB}/releases/101"
 cp -R "${FAKE_GITHUB}/releases/101" "${FAKE_GITHUB}/releases/102"
 publish_release publish v1.2.1
 refused "two drafts for the tag" "more than one release carries the tag v1.2.1"
+leaves_delete "two drafts for the tag" "gh release delete v1.2.1 --repo ${FAKE_SLUG} --yes"
+check "two drafts for the tag: the delete is typed once for each" contains "${OUT}" "type it 2 times"
 rm -rf "${FAKE_GITHUB}/releases/102"
 rm "${RECORDS}/reader-checked"
 publish_release publish v1.2.1
@@ -969,6 +1003,11 @@ cp "${NOT_A_TAGS_DOCUMENT}" "$(assets_of 101)/trust-2.json"
 vouch_for v1.2.1 101
 publish_release publish v1.2.1
 refused "a trust document that differs from the tag's" "the release's trust-2.json is not v1.2.1's trust/trust-2.json"
+leaves_delete "a trust document that differs from the tag's" "gh release delete v1.2.1 --repo ${FAKE_SLUG} --yes"
+echo false > "${FAKE_GITHUB}/releases/101/draft"
+publish_release publish v1.2.1
+refused "a published release's trust document that differs from the tag's" "the release's trust-2.json is not v1.2.1's trust/trust-2.json."
+check "a published release's trust document that differs: no delete is printed" lacks "${OUT}" "gh release delete"
 restore_state v1.2.1 101
 
 echo "── publish refuses: the repository ──"

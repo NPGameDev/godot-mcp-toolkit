@@ -620,10 +620,10 @@ Next steps:
      (it takes no input) — do not delete/re-push the tag.
   3. Publish from this machine once that run is green (RELEASING.md → The
      toolkit's publish ritual): scripts/publish-release.sh check ${TAG}, then
-     draft ${TAG}; the maintainer signs in the admin account, from a fresh
-     anonymous clone of main, with the command draft prints
-     (scripts/sign-release.sh ${TAG} <zip> <private-key.pem>); then
-     attach ${TAG}; the maintainer runs publish ${TAG}.
+     draft ${TAG}, which leaves the zip in /Users/Shared/publish-release-${TAG}.*;
+     the maintainer signs in the admin account's own login session with the
+     command draft prints (~/sign/release-sign ${TAG}); then attach ${TAG};
+     the maintainer runs publish ${TAG}.
 
 Asset submission values (transcribe into the web form; RELEASING.md → Asset distribution):
   Version:          ${VERSION}
