@@ -84,6 +84,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (Exclude Addons off on Godot 4.2 to 4.5, or `res://addons` set to Include in Directory
   Rules on 4.6+): seven variables typed from a Variant value, which Godot treats as an
   error by default, stopped it compiling.
+- `node_set_property` clears a Resource or Node typed property with `value: null`,
+  as the inspector's Clear does
+  ([#156](https://github.com/NPGameDev/godot-mcp-toolkit/issues/156)). It failed with
+  `SET_FAILED` and put the old value back, because Godot reads the cleared property
+  back as a null Object, which the write check took for a dropped value. The batch
+  form and `scene.create_node`'s inline properties share that check.
 
 ## [1.1.2] - 2026-10-29
 
