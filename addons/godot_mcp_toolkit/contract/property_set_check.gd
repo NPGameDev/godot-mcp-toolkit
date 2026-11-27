@@ -153,17 +153,25 @@ static func _is_stringy_type(t: int) -> bool:
 	return t == TYPE_STRING or t == TYPE_STRING_NAME or t == TYPE_NODE_PATH
 
 
+## True when [param t] is Object or Nil. A null Object and Nil are both null: an
+## Object property set to null reads back as a null Object, not Nil.
+static func _is_object_or_nil(t: int) -> bool:
+	return t == TYPE_OBJECT or t == TYPE_NIL
+
+
 ## Cross-type-tolerant value equality used to judge whether a write landed. Same
 ## type → exact [code]==[/code]. Within the numeric family (bool/int/float) and the
 ## string family (String/StringName/NodePath) values compare across the family, and
 ## integer/float vector variants (Vector2i↔Vector2, Vector3i↔Vector3) compare
-## approximately — each mirrors a conversion Godot's set() performs. Anything else
-## across types is unequal.
+## approximately — each mirrors a conversion Godot's set() performs. A null Object
+## equals Nil. Anything else across types is unequal.
 static func _values_loosely_equal(a: Variant, b: Variant) -> bool:
 	var ta := typeof(a)
 	var tb := typeof(b)
 	if ta == tb:
 		return a == b
+	if _is_object_or_nil(ta) and _is_object_or_nil(tb):
+		return a == null and b == null
 	if _is_numeric_type(ta) and _is_numeric_type(tb):
 		return is_equal_approx(float(a), float(b))
 	if _is_stringy_type(ta) and _is_stringy_type(tb):

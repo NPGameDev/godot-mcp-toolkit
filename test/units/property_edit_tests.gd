@@ -249,6 +249,15 @@ static func _test_set_drop_logic(testing) -> void:
 	# Valid Resource set-to-same object → ok (identity backstop, no false drop).
 	testing.eq(_status(PropertySetCheck.describe_set_drop(res_a, res_a, res_a, "texture")), "ok",
 		"Resource set-to-same object → ok")
+	# Cleared Object property: set(null) on a Resource slot reads back as a null
+	# Object (TYPE_OBJECT), not Nil, and that is the value requested → ok.
+	var sprite := Sprite2D.new()
+	sprite.texture = PlaceholderTexture2D.new()
+	var tex_before = sprite.get("texture")
+	sprite.set("texture", null)
+	testing.eq(_status(PropertySetCheck.describe_set_drop(tex_before, sprite.get("texture"), null, "texture")), "ok",
+		"Resource property cleared to null → ok")
+	sprite.free()
 
 	print("")
 
